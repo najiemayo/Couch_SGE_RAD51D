@@ -1,0 +1,61 @@
+
+\section{Model Comparison With T--Error Model}
+
+%% begin.rcode
+%  tabl.lda<-utils::read.csv("../rad51d.mave25.noPosNorm.pt2min5/MAVEpostProbs.csv",row.names="variant")
+%  table(rownames(tabl)==rownames(tabl.lda))
+%  ## log Posterior Odds Plot:
+%  plot(tabl$lPostOdds,tabl.lda$lPostOdds,las=1,
+%       ylab="Standard Model",xlab="Error Variance Model",
+%       main="logPostOdds Standard Model VS Error Variance Model")
+%  abline(a=0,b=1,lwd=2,col=2)
+%  abline(h=0,lty=3)
+%  abline(v=0,lty=3)
+%  ## Allowance for Error Plot
+%  tabl$eta.ae<-((tabl$eta.ul - tabl$eta.ll)/2)
+%  tabl.lda$eta.ae<-((tabl.lda$eta.ul - tabl.lda$eta.ll)/2)
+%  plot(tabl$eta.ae,tabl.lda$eta.ae,las=1,
+%       ylab="Standard Model",xlab="Error Variance Model",
+%       main="Variant Effects Error Allowance\n Standard Model VS Error Variance Model")
+%  abline(a=0,b=1,lwd=2,col=2)
+%  abline(h=0,lty=3)
+%  abline(v=0,lty=3)
+%  ## Eta Plot
+%  plot(tabl$eta,tabl.lda$eta,las=1,
+%       ylab="Standard Model",xlab="Error Variance Model",
+%       main="Variant Effects (Eta's)\n Standard Model VS Error Variance Model")
+%  abline(a=0,b=1,lwd=2,col=2)
+%  abline(h=0,lty=3)
+%  abline(v=0,lty=3)
+%% end.rcode
+
+\section{Model Comparison With All Stop Gain and Synonymous Variants Labeled}
+
+%% begin.rcode
+%  tabl.full<-utils::read.csv("../rad51d.mave25.noPosNorm.ErrVarModel.pt2min5/MAVEpostProbs.csv",row.names="variant")
+%  table(rownames(tabl)==rownames(tabl.full))
+%  ## log Posterior Odds Plot:
+%  plot(tabl$lPostOdds,tabl.full$lPostOdds,las=1,
+%       xlab="ClinVar Not Labeled",ylab="ClinVar Labeled",
+%       main="logPostOdds With and Without ClinVar Labeling")
+%  abline(a=0,b=1,lwd=2,col=2)
+%  abline(h=0,lty=3)
+%  abline(v=0,lty=3)
+%  ## Allowance for Error Plot
+%  tabl$eta.ae<-((tabl$eta.ul - tabl$eta.ll)/2)
+%  tabl.full$eta.ae<-((tabl.full$eta.ul - tabl.full$eta.ll)/2)
+%  plot(tabl$eta.ae,tabl.full$eta.ae,las=1,
+%       xlab="ClinVar Not Labeled",ylab="ClinVar Labeled",
+%       main="Variant Effects Error Allowance\n With and Without ClinVar Labeling")
+%  abline(a=0,b=1,lwd=2,col=2)
+%  abline(h=0,lty=3)
+%  abline(v=0,lty=3)
+%  ## Eta Plot
+%  plot(tabl$eta,tabl.full$eta,las=1,
+%       xlab="ClinVar Not Labeled",ylab="ClinVar Labeled",
+%       main="Variant Effects (Eta's)\n With and Without ClinVar Labeling")
+%  abline(a=0,b=1,lwd=2,col=2)
+%  abline(h=0,lty=3)
+%  abline(v=0,lty=3)
+%% end.rcode
+

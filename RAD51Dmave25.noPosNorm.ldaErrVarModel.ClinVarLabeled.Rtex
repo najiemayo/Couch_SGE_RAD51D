@@ -1,0 +1,1174 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Analysis of RAD51D MAVE Data.     %%
+%% Bi-normal, common variance Model. %%
+%%     Annotated knitr doc           %%
+%% Last Modified  10/08/25 by ESI.   %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\documentclass{article}
+
+%% begin.rcode setup, include=FALSE
+% opts_chunk$set(fig.path='./figs/',cache.path='./cache/',child.path='../')
+%% end.rcode
+
+\input{preamble.tex}
+
+\title{2025 All Exon RAD51D VuS Analysis of MAVE Data Set\\ Bi--Normal, Common
+  Variance Classification Model with \\ Batch Location And Scaling \\ Cube Root of Ratio \\
+  Error Variance Model, No Positional Normalization\\ ClinVar Variants Labeled for Training}
+%\author{Author1, Author2, Author3}
+\date{\today}
+\begin{document}
+\maketitle
+
+\section{High--Level User--Specified Parameters}
+
+%% begin.rcode
+%  ## NOT USED: T degrees of freedom for measurement error model
+%  ## t.df<-5
+%  ## Drop observations with min(Day 0 count, Day5 count)<min.Count
+%  min.Count<-5
+%  ## Add this to each count:
+%  pseudoCount<-0.5
+%  ## truncate numerator and denominator distributions in variance model
+%  ##   at the truncQ and 1-truncQ percentage points:
+%  truncQ<-0.01
+%  ## Prior Probability Pathogenic, beta distribution parameters:
+%  beta.a<-2.0
+%  beta.b<-8.0  ##mean=0.10, ESS = 10
+%  ## Set List of MCMC Control Parameters:
+%  ##mcmc.pars<-list(iter=10000, ## short run
+%  ##                burn=5000,
+%  ##                thin=10)
+%  ##mcmc.pars<-list(iter=150000, ## long run
+%  ##                burn=50000,
+%  ##               thin=10)
+%  mcmc.pars<-list(iter=550000, ## longer run
+%                  burn=50000,
+%                  thin=20)
+%% end.rcode
+
+\section{Start Up}
+
+Set a seed for the random number generators to ensure repeatabability
+and load necessary R libraries.
+
+%% begin.rcode
+%  ## Set Random Seed
+%  set.seed(seed=721)
+%  ## Load custom functions that will be used below:
+%  source("RFuncs.R",echo=FALSE)
+%  ## Libraries:
+%  ##library(coda)
+%  library(rjags)
+%  library(R2WinBUGS)
+%  library(R2jags)
+%  library(mgcv)
+%% end.rcode
+
+\section{Import Data}
+
+Read in the MAVE data and training variant labels.
+
+{\textbf{Exclude:}}
+\begin{enumerate}
+\item stop gain variants in exon 10 and
+\item synonymous variants with high splice site scores from
+  training.
+\end{enumerate}
+
+%% begin.rcode
+%  uvDB<-read.delim("aggregated_RAD51D_E1_10_SNV_9_12_2025.tsv")
+%  dim(uvDB)
+%  ## uvDB<-uvDB[uvDB$EventType %in% c("Missense","Synonymous","StopGain"),]
+%  dim(uvDB)
+%  uvDB$uPOS<-paste0(uvDB$POS,"_",uvDB$REF,"_",uvDB$ALT)
+%  lost<-c("35118520_G_C","35118520_G_A","35118520_G_T",
+%          "35118568_G_A","35118568_G_C","35118568_G_T",
+%          "35118616_G_T","35118616_G_C","35118616_G_A")
+%  table(uvDB$uPOS %in% lost); table(unique(uvDB$uPOS) %in% lost)
+%  ## use StopGain vs Synonymous for Training lables:
+%  kdel<-unique(uvDB$uPOS[((uvDB$EventType=="StopGain")&(uvDB$Exon!="E10"))])
+%  kneut<-unique(uvDB$uPOS[((uvDB$EventType=="Synonymous")&(uvDB$SpliceMax<0.2))])
+%  ## PAM Site Exclusions:
+%  no.label<-c("35119543_T_G","35106459_G_A","35103282_G_A")
+%  kdel<-kdel[!(kdel %in% no.label)]
+%  kneut<-kneut[!(kneut %in% no.label)]
+%  ## ClinVar Exclusions (NONE)
+%  ##cv<-read.csv("clinVarExclusions.csv")
+%  ##table(kdel %in% cv$variant)
+%  ##table(kneut %in% cv$variant)
+%  ##kdel<-kdel[!(kdel %in% cv$variant)]
+%  length(kdel)
+%  ##kneut<-kneut[!(kneut %in% cv$variant)]
+%  length(kneut)
+%  uvDB$label<-rep(NA,nrow(uvDB))
+%  uvDB$label[uvDB$uPOS %in% kdel]<-"P"
+%  uvDB$label[uvDB$uPOS %in% kneut]<-"B"
+%  head(uvDB)
+%  lost<-c("35118520_G_C","35118520_G_A","35118520_G_T",
+%          "35118568_G_A","35118568_G_C","35118568_G_T",
+%          "35118616_G_T","35118616_G_C","35118616_G_A")
+%  table(uvDB$uPOS %in% lost); table(unique(uvDB$uPOS) %in% lost)
+%% end.rcode
+
+\subsection{Add Pseudo Count {\texttt{pseudoCount}} to All Event Counts}
+
+%% begin.rcode, fig.width=6.5, fig.height=6.0
+%  uvDB$EventCount<-(uvDB$EventCount + pseudoCount)
+%% end.rcode
+
+\section{DB Row Column Names}
+
+Add row names; change a few column names; make `Exon' a factor:
+
+%% begin.rcode
+%  lost<-c("35118520_G_C","35118520_G_A","35118520_G_T",
+%          "35118568_G_A","35118568_G_C","35118568_G_T",
+%          "35118616_G_T","35118616_G_C","35118616_G_A")
+%  table(uvDB$uPOS %in% lost); table(unique(uvDB$uPOS) %in% lost)
+%  uvDB$P_B<-uvDB$label
+%  colnames(uvDB)[c(1:7,9:21,26,29,30,31,32)]  ##annot
+%  colnames(uvDB)[-c(1:7,9:21,26,29,30,31,32)] ## measurement
+%  ## Annotation Structure. One Row Per Unique Variant
+%  annot<-uvDB[,c(1:7,9:21,26,29,30,31,32)]
+%  dim(annot)
+%  annot<-unique(annot)
+%  dim(annot)
+%  length(unique(annot$uPOS))
+%  rownames(annot)<-annot$uPOS
+%  ## Measurement Structure. One Row Per Measurement.
+%  x<-uvDB[,-c(1:7,9:21,26,29,30,32,33)]
+%  ## Day by Rep Sets:
+%  uv14.1<-x[x$Time=="D14" & x$Rep=="1",]
+%  uv14.2<-x[x$Time=="D14" & x$Rep=="2",]
+%  uv14.3<-x[x$Time=="D14" & x$Rep=="3",]
+%  uv5.1<-x[x$Time=="D5" & x$Rep=="1",]
+%  uv5.2<-x[x$Time=="D5" & x$Rep=="2",]
+%  uv5.3<-x[x$Time=="D5" & x$Rep=="3",]
+%  uv0.1<-x[x$Time=="Lib" & x$Rep=="1",]
+%  uv0.2<-x[x$Time=="Lib" & x$Rep=="2",]
+%  uv0.3<-x[x$Time=="Lib" & x$Rep=="3",]
+%  if (nrow(uv14.1)==length(unique(uv14.1$uPOS))) rownames(uv14.1)<-uv14.1$uPOS
+%  if (nrow(uv14.2)==length(unique(uv14.2$uPOS))) rownames(uv14.2)<-uv14.2$uPOS
+%  if (nrow(uv14.3)==length(unique(uv14.3$uPOS))) rownames(uv14.3)<-uv14.3$uPOS
+%  if (nrow(uv5.1)==length(unique(uv5.1$uPOS))) rownames(uv5.1)<-uv5.1$uPOS
+%  if (nrow(uv5.2)==length(unique(uv5.2$uPOS))) rownames(uv5.2)<-uv5.2$uPOS
+%  if (nrow(uv5.3)==length(unique(uv5.3$uPOS))) rownames(uv5.3)<-uv5.3$uPOS
+%  if (nrow(uv0.1)==length(unique(uv0.1$uPOS))) rownames(uv0.1)<-uv0.1$uPOS
+%  if (nrow(uv0.2)==length(unique(uv0.2$uPOS))) rownames(uv0.2)<-uv0.2$uPOS
+%  if (nrow(uv0.3)==length(unique(uv0.3$uPOS))) rownames(uv0.3)<-uv0.3$uPOS
+%  ## Start with annotation structure (one row per observed variant)
+%  uvDB<-annot
+%  ## Add in Day- and Replicate-Specfic Read Counts:
+%  uvDB$R1_D14<-rep(NA,nrow(uvDB))
+%  uvDB$R2_D14<-rep(NA,nrow(uvDB))
+%  uvDB$R3_D14<-rep(NA,nrow(uvDB))
+%  uvDB$R1_D5<-rep(NA,nrow(uvDB))
+%  uvDB$R2_D5<-rep(NA,nrow(uvDB))
+%  uvDB$R3_D5<-rep(NA,nrow(uvDB))
+%  uvDB$R1_lib<-rep(NA,nrow(uvDB))
+%  uvDB$R2_lib<-rep(NA,nrow(uvDB))
+%  uvDB$R3_lib<-rep(NA,nrow(uvDB))
+%  uvDB$libRepA<-rep(NA,nrow(uvDB))
+%  uvDB$libRepB<-rep(NA,nrow(uvDB))
+%  ##
+%  uvDB[rownames(uv14.1),"R1_D14"]<-uv14.1$EventCount
+%  uvDB[rownames(uv14.2),"R2_D14"]<-uv14.2$EventCount
+%  uvDB[rownames(uv14.3),"R3_D14"]<-uv14.3$EventCount
+%  ##
+%  uvDB[rownames(uv5.1),"R1_D5"]<-uv5.1$EventCount
+%  uvDB[rownames(uv5.2),"R2_D5"]<-uv5.2$EventCount
+%  uvDB[rownames(uv5.3),"R3_D5"]<-uv5.3$EventCount
+%  ##
+%  uvDB[rownames(uv0.1),"R1_lib"]<-uv0.1$EventCount
+%  uvDB[rownames(uv0.2),"R2_lib"]<-uv0.2$EventCount
+%  uvDB[rownames(uv0.3),"R3_lib"]<-uv0.3$EventCount
+%  ##
+%  uvDB[rownames(uv0.1),"libRepA"]<-uv0.1$Rep
+%  uvDB[rownames(uv0.2),"libRepB"]<-uv0.2$Rep
+%  ##
+%  lost<-c("35118520_G_C","35118520_G_A","35118520_G_T",
+%          "35118568_G_A","35118568_G_C","35118568_G_T",
+%          "35118616_G_T","35118616_G_C","35118616_G_A")
+%  table(uvDB$uPOS %in% lost); table(unique(uvDB$uPOS) %in% lost)
+%  uvDB$Exon<-factor(uvDB$Exon)
+%  cnames<-colnames(uvDB)
+%  uvDB<-uvDB[,!(cnames %in% c("sample_id","Rep","Time"))]
+%  uvDB$P_B<-uvDB$label
+%% end.rcode
+
+\subsection{Variant Class EXCLUSIONS: None, Do Not Remove Other Event Types}
+
+No exclusions; keep all variants:
+
+%% begin.rcode
+%  table(uvDB$EventType,useNA="always")
+%  dim(uvDB)
+%  ## uvDB<-uvDB[uvDB$EventType %in% c("Missense","Synonymous","StopGain"),]
+%  ## dim(uvDB)
+%% end.rcode
+
+\subsection{Compute Offsets and Other Summaries for Counts Data}
+
+Compute count totals for all observed combinations of day, exon and
+replicate (labeled `offsets' in the code below), then use these to
+compute raw abundance rates (denoted $A_{v,r,d}$ in the
+Supplement). Use the abundance rates to compute day 14 to day 5 and
+day 14 to day 0 (lib) rate ratios (denoted $R_{v,r}^{14:5}$ and
+$R_{v,r}^{14:0}$, respectively, in the Supplement).  Add columns
+containing the `offsets' and the two rate ratios to the working data
+base {\texttt{uvDB}}.  Finally, compute an exon--specific standardized
+position variable {\texttt{PosStd}} and add it to the working data
+base.
+
+%% begin.rcode
+%   cnames<-colnames(uvDB)
+%   lcnames<-nchar(cnames)
+%   daylib<-cnames[substr(cnames,lcnames-2,lcnames)=="lib"]
+%   day5<-cnames[substr(cnames,lcnames-1,lcnames)=="D5"]
+%   day14<-cnames[substr(cnames,lcnames-2,lcnames)=="D14"]
+%   offsetlib<-matrix(NA,nrow(uvDB),length(daylib))
+%   colnames(offsetlib)<-cnOffsetLib<-paste0("R",1:3,"offsetLib")
+%   offset5<-matrix(NA,nrow(uvDB),length(day5))
+%   colnames(offset5)<-cnOffset5<-paste0("R",1:3,"offsetD5")
+%   offset14<-matrix(NA,nrow(uvDB),length(day14))
+%   colnames(offset14)<-cnOffset14<-paste0("R",1:3,"offsetD14")
+%   for (i in 1:length(day5)){
+%       templib<-lapply(split(uvDB[,daylib[i]],uvDB$Exon),sum,na.rm=TRUE)
+%       temp5<-lapply(split(uvDB[,day5[i]],uvDB$Exon),sum,na.rm=TRUE)
+%       temp14<-lapply(split(uvDB[,day14[i]],uvDB$Exon),sum,na.rm=TRUE)
+%       offsetlib[,i]<-as.numeric(templib[uvDB$Exon])
+%       offset5[,i]<-as.numeric(temp5[uvDB$Exon])
+%       offset14[,i]<-as.numeric(temp14[uvDB$Exon])
+%   }
+%   rawlib<-(uvDB[,daylib]/offsetlib)  ## lib (day 0) abundance rates
+%   raw5<-(uvDB[,day5]/offset5)        ## day 5 abundance rates
+%   raw14<-(uvDB[,day14]/offset14)     ## day 14 abundance rates
+%   raw<-(raw14/raw5)                  ## day 14 to day 5 rate ratio
+%   raw2<-(raw14/rawlib)               ## day 15 to day 0 rate ratio
+%   colnames(raw)<-paste0("R",1:3,"_raw")
+%   colnames(raw2)<-paste0("R",1:3,"_rawlib")
+%   uvDB<-cbind(uvDB,offsetlib,offset5,offset14,raw,raw2)
+%   rm(offsetlib,offset5,offset14,lcnames,raw,raw2,rawlib,raw5,raw14)
+%   pos.min<-lapply(split(uvDB[,"POS"],uvDB$Exon),min,na.rm=TRUE)
+%   pos.max<-lapply(split(uvDB[,"POS"],uvDB$Exon),max,na.rm=TRUE)
+%   pos.range<- as.numeric(pos.max) - as.numeric(pos.min)
+%   names(pos.range)<-names(pos.min)
+%   uvDB$PosMin<-as.numeric(pos.min[uvDB$Exon])
+%   uvDB$PosMax<-as.numeric(pos.max[uvDB$Exon])
+%   uvDB$PosRange<-as.numeric(pos.range[uvDB$Exon])
+%   uvDB$PosStd<-((uvDB$POS - uvDB$PosMin)/(uvDB$PosMax - uvDB$PosMin))
+%   summary(uvDB$PosStd)
+%   head(uvDB)
+%  lost<-c("35118520_G_C","35118520_G_A","35118520_G_T",
+%          "35118568_G_A","35118568_G_C","35118568_G_T",
+%          "35118616_G_T","35118616_G_C","35118616_G_A")
+%  table(uvDB$uPOS %in% lost); table(unique(uvDB$uPOS) %in% lost)
+%% end.rcode
+
+\section{Exploratory Data Analysis}
+
+\subsection{Tabular Summaries}
+
+Cross--tabulations of several design and annotation variables:
+
+%% begin.rcode
+%  table(uvDB$Exon,uvDB$EventType,useNA="always")
+%  table(uvDB$Exon,uvDB$P_B,useNA="always")
+%  ##table(uvDB$EventType,uvDB$spliceR,useNA="always")
+%  ##table(uvDB$P_B,uvDB$classification)
+%  ##table(uvDB$label,uvDB$classification)
+%  ##table(uvDB$EventType,uvDB$spliceR)
+%  ##table(uvDB$EventType,uvDB$classification)
+%% end.rcode
+
+\newpage
+\subsection{Graphical Summaries of Labeled Data}
+
+Histograms of: (1) the replicate 1 day 14 to day 5 rate ratio, (2) the
+median day 14 to day 5 rate ratio across replicates and (3) the median
+day 14 to day 0 (not yet positionally normalized) rate ratio.
+
+%% begin.rcode, fig.width=7.5, fig.height=9.5
+%  par(mfrow=c(3,1))
+%  plot(c(0,3.5),c(0,2.5),las=1,xlab="R1_Raw",ylab="Probability",type="n",
+%      ,main="Histogram of Labelled Rep1 D14/D5 Ratios by Class")
+%  hist(uvDB$R1_raw[(!is.na(uvDB$P_B))&(uvDB$P_B=="B")],
+%       col=3,prob=TRUE,nclass=30,add=TRUE)
+%  hist(uvDB$R1_raw[(!is.na(uvDB$P_B))&(uvDB$P_B=="P")],
+%       col=2,prob=TRUE,nclass=30,add=TRUE)
+%  legend("topleft",inset=0.05,legend=c("Benign","Pathogenic"),
+%         col=c(3,2),lwd=5)
+%  ## Median of Raw D14/D5 Ratios:
+%  uvDB$rawMedn<-apply(uvDB[,c("R1_raw","R2_raw","R3_raw")],
+%                        1,FUN=median,na.rm=TRUE)
+%  plot(c(0,3.5),c(0,2.5),las=1,xlab="rawMedn",ylab="Probability",type="n",
+%      ,main="Histogram of Labelled Raw Median D14/D5 Ratios by Class")
+%  hist(uvDB$rawMedn[(!is.na(uvDB$P_B))&(uvDB$P_B=="B")],
+%       col=3,prob=TRUE,nclass=30,add=TRUE)
+%  hist(uvDB$rawMedn[(!is.na(uvDB$P_B))&(uvDB$P_B=="P")],
+%       col=2,prob=TRUE,nclass=30,add=TRUE)
+%  legend("topleft",inset=0.05,legend=c("Benign","Pathogenic"),
+%         col=c(3,2),lwd=5)
+%  ## Median of Raw Day14/lib Ratios 
+%  uvDB$rawLibMedn<-apply(uvDB[,c("R1_rawlib","R2_rawlib","R3_rawlib")],
+%                          1,FUN=median,na.rm=TRUE)
+%  plot(c(0,3.5),c(0,2.5),las=1,xlab="ceNormMedn",ylab="Probability",type="n",
+%      ,main="Histogram of Labelled Day14/Lib Median Ratios by Class")
+%  hist(uvDB$rawLibMedn[(!is.na(uvDB$P_B))&(uvDB$P_B=="B")],
+%       col=3,prob=TRUE,nclass=30,add=TRUE)
+%  hist(uvDB$rawLibMedn[(!is.na(uvDB$P_B))&(uvDB$P_B=="P")],
+%       col=2,prob=TRUE,nclass=30,add=TRUE)
+%  legend("topleft",inset=0.05,legend=c("Benign","Pathogenic"),
+%         col=c(3,2),lwd=5)
+%% end.rcode
+
+\newpage
+\section{Create `Tall' Data Structure}
+
+Here we create a stacked data structure with day-- and
+replicate--specific measurments in different rows and the variant
+counts and batch totals (`offsets') each in their own column.  This
+format is needed for modeling.  Save the old {\texttt{uvDB}} as
+{\texttt{uvMaster}} and save the stacked data structure as the new
+{\texttt{uvDB}}. Convert categorical variables from character to
+factor types.
+
+%% begin.rcode
+%  lost<-c("35118520_G_C","35118520_G_A","35118520_G_T",
+%          "35118568_G_A","35118568_G_C","35118568_G_T",
+%          "35118616_G_T","35118616_G_C","35118616_G_A")
+%  table(uvDB$uPOS %in% lost); table(unique(uvDB$uPOS) %in% lost)
+%  uvMaster<-uvDB
+%  uvDB<-uvDB[,c("uPOS","PosStd","AApos","Exon","P_B","label","EventType",day5,day14,daylib,cnOffset5,cnOffset14,cnOffsetLib)]
+%  rownames(uvDB)<-NULL
+%  temp<-uvDB
+%  n<-nrow(temp)
+%  tall<-NULL
+%  for (i in 1:3){
+%    replic<-paste0("R",i)
+%    d5<-cbind(as.matrix(temp[,c("uPOS","PosStd","AApos","Exon","P_B","label","EventType",day5[i],cnOffset5[i])]),
+%              rep("D5",n),rep(replic,n))
+%    d14<-cbind(as.matrix(temp[,c("uPOS","PosStd","AApos","Exon","P_B","label","EventType",day14[i],cnOffset14[i])]),
+%              rep("D14",n),rep(replic,n))
+%    d0<-cbind(as.matrix(temp[,c("uPOS","PosStd","AApos","Exon","P_B","label","EventType",daylib[i],cnOffsetLib[i])]),
+%              rep("D0",n),rep(replic,n))
+%    colnames(d0)<-colnames(d5)<-colnames(d14)<-NULL
+%    tall<-rbind(tall,d0,d5,d14)
+%  }
+%  uvDB<-data.frame(tall)
+%  rm(temp)
+%  colnames(uvDB)<-c("variant","PosStd","AApos","Exon","p.b","label","eventtype","count","offset","day","replicate")
+%  lost<-c("35118520_G_C","35118520_G_A","35118520_G_T",
+%          "35118568_G_A","35118568_G_C","35118568_G_T",
+%          "35118616_G_T","35118616_G_C","35118616_G_A")
+%  table(uvDB$variant %in% lost); table(unique(uvDB$variant) %in% lost)
+%  uvDB$PosStd<-as.numeric(uvDB$PosStd)
+%  uvDB$count<-as.numeric(uvDB$count)
+%  uvDB$offset<-as.numeric(uvDB$offset)
+%  uvDB$day<-factor(uvDB$day)
+%  uvDB$replicate<-factor(uvDB$replicate)
+%  uvDB$variant<-factor(uvDB$variant)
+%  uvDB$Exon<-factor(uvDB$Exon)
+%  uvDB$p.b<-factor(uvDB$p.b)
+%  uvDB$p.b<-factor(uvDB$label)
+%  uvDB$batchE<-as.numeric(uvDB$Exon)   ## batch=exon
+%  ## Exon by Rep
+%  uvDB$ER<-paste0(substr(uvDB$Exon,1,4),uvDB$replicate)
+%  uvDB$ER<-factor(uvDB$ER)
+%  uvDB$batch<-as.numeric(uvDB$ER)  ## More refined batch variable
+%  table(uvDB$ER)
+%  table(uvDB$batch)
+%  head(uvDB)
+%  summary(uvDB)
+%  lost<-c("35118520_G_C","35118520_G_A","35118520_G_T",
+%          "35118568_G_A","35118568_G_C","35118568_G_T",
+%          "35118616_G_T","35118616_G_C","35118616_G_A")
+%  table(uvDB$variant %in% lost); table(unique(uvDB$variant) %in% lost)
+%  table(uvDB$day,uvDB$replicate,useNA="always")
+%%  end.rcode
+
+\newpage
+\section{Exploratory Mixed Effects Model of The Labeled Data}
+
+\subsection{Setup Data Structure}
+
+The following code chunk creates the final analysis data set and adds
+the positionally normalized, logged day 14 to day 0 rate ratio and the
+exon by replicate batch variable.  This structure becomes the new data
+base matrix {\texttt{uvDB}}.  This structure is used for this
+section's exploratory analysis and for the final VarCall analysis.
+
+%% begin.rcode, fig.width=6.5, fig.height=4.0
+%  D0<-uvDB[uvDB$day=="D0",]
+%  D0$ID<-paste0(D0$variant,"_",D0$replicate)
+%  length(unique(D0$ID))
+%  D5<-uvDB[uvDB$day=="D5",]
+%  D5$ID<-paste0(D5$variant,"_",D5$replicate)
+%  length(unique(D5$ID))
+%  D14<-uvDB[uvDB$day=="D14",]
+%  D14$ID<-paste0(D14$variant,"_",D14$replicate)
+%  length(unique(D14$ID))
+%  table(D14$ID %in% D0$ID)
+%  table(D0$ID %in% D14$ID)
+%  D0<-D0[D0$ID %in% D14$ID,]
+%  table(D0$ID == D14$ID)
+%  D5<-D5[D5$ID %in% D14$ID,]
+%  table(D5$ID == D14$ID)
+%  #########################################################################
+%  ## This is the Normalized log(Ratio) Used in the Classification Model: ##
+%  #########################################################################
+%  D14$lRatio<-((D14$count/D5$count)^(1/3))/((D14$offset/D5$offset)^(1/3))
+%  ##D14$lRatio<-(log(D14$count) - log(D14$offset)) - (log(D5$count) - log(D5$offset))
+%  hist(D14$lRatio,nclass=100,main="Log Ratio")
+%  ############################################
+%  ## Data Set for Analysis of Labeled Data: ##
+%  ############################################
+%  uvKnown<-D14[!is.na(D14$label),]
+%  #################################
+%  ## Data Set for Full Analysis: ##
+%  #################################
+%  D14$Ratio.D0 <- (D0$count/D0$offset)
+%  D14$Ratio.D5 <- (D5$count/D5$offset)
+%  D14$Ratio.D14 <- (D14$count/D14$offset)
+%  D14$Offset.D0 <- D0$offset
+%  D14$Offset.D5 <- D5$offset
+%  D14$Offset.D14 <- D14$offset
+%  D14$Count.D0 <- D0$count
+%  D14$Count.D5 <- D5$count
+%  D14$Count.D14 <- D14$count
+%  uvDB<-D14
+%%  end.rcode
+
+
+\subsection{VARIANT-- and MEASUREMENT--LEVEL EXCLUSIONS:}
+
+\begin{enumerate}
+\item Remove variants with {\textbf{fewer than five read counts}} at
+  Day 0 or Day 5.
+\item {\textbf{Note}}: Measurements that fall {\textbf{in a PAM site}}
+  are excluded from the analysis. For Exon 3, these sites vary by
+  replicate: the R1 PAM site is at AA 81, the R2 PAM site is at AA 49
+  and at R3 it is at AA 65.
+  \item Remove records with missing measurements.
+\end{enumerate}
+
+%% begin.rcode
+%  lost<-c("35118520_G_C","35118520_G_A","35118520_G_T",
+%          "35118568_G_A","35118568_G_C","35118568_G_T",
+%          "35118616_G_T","35118616_G_C","35118616_G_A")
+%  table(uvDB$variant %in% lost); table(unique(uvDB$variant) %in% lost)
+%  summary(uvDB$count)
+%  dim(uvDB)
+%  D0$count[is.na(D0$count)]<-(-100)
+%  D5$count[is.na(D5$count)]<-(-100)
+%  keep<-(apply(cbind(D0$count,D5$count),1,min,na.rm=TRUE)>=min.Count)
+%  dropLowCount<-data.frame(variant=D0$variant,nD0=D0$count,nD5=D5$count)[apply(cbind(D0$count,D5$count),1,min,na.rm=TRUE)<min.Count,]
+%  table(keep)
+%  uvDB<-uvDB[keep,]
+%  dim(uvDB)
+%  ## Remove Exon 3 PAM site data:
+%  table(is.na(uvDB$variant))
+%  dropR1<-((!is.na(as.numeric(uvDB$AApos)))&(uvDB$Exon=="E3")&(uvDB$replicate=="R1")&(as.numeric(uvDB$AApos)==81))
+%  dropR2<-((!is.na(as.numeric(uvDB$AApos)))&(uvDB$Exon=="E3")&(uvDB$replicate=="R2")&(as.numeric(uvDB$AApos)==49))
+%  dropR3<-((!is.na(as.numeric(uvDB$AApos)))&(uvDB$Exon=="E3")&(uvDB$replicate=="R3")&(as.numeric(uvDB$AApos)==65))
+%  table(dropR1)
+%  table(dropR2)
+%  table(dropR3)
+%  table((!dropR1)&(!dropR2)&(!dropR3))
+%  uvDB<-uvDB[((!dropR1)&(!dropR2)&(!dropR3)),]
+%  table(uvDB$variant %in% lost); table(unique(uvDB$variant) %in% lost)
+%  uvDB$ER<-factor(uvDB$ER)
+%  uvDB$batch<-as.numeric(uvDB$ER)  ## More refined batch variable
+%  table(uvDB$ER)
+%  table(uvDB$batch)
+%  uvDB<-uvDB[!is.na(uvDB$lRatio),]
+%  lost<-c("35118520_G_C","35118520_G_A","35118520_G_T",
+%          "35118568_G_A","35118568_G_C","35118568_G_T",
+%          "35118616_G_T","35118616_G_C","35118616_G_A")
+%  table(uvDB$variant %in% lost); table(unique(uvDB$variant) %in% lost)
+%% end.rcode
+
+
+\subsection{Mixed Effects Model for the Labeled Variants}
+
+Here we fit a linear mixed model using the labeled variants.  The
+model includes a fixed effect for pathogenicity status
+(\texttt{label}) and (nested) random effects for variant and exon and
+random intercept for label.
+
+%% begin.rcode, fig.width=3.5, fig.height=4.0
+%  uvKnown<-uvKnown[!is.na(uvKnown$lRatio),]
+%  lme.out2<-lme(lRatio ~ -1 + label, random= ~ -1+label|Exon/variant,data=uvKnown)
+%  summary(lme.out2)
+%  re<-ranef(lme.out2)
+%  names(re)
+%  names(re[[2]])
+%% end.rcode
+
+In the following code chunk, we check modeling assumptions.
+
+%% begin.rcode, fig.width=7.5, fig.height=8.5
+% par(mfrow=c(2,2))
+%  qqnorm(re[["Exon"]][,1],main="Benign Exon Effects")
+%  abline(a=0,b=sd((re[["Exon"]][,1])),lwd=2,col=2)
+%  qqnorm(re[["Exon"]][,2],main="Pathogenic Exon Effects")
+%  abline(a=0,b=sd((re[["Exon"]][,2])),lwd=2,col=2)
+%  qqnorm(re[["variant"]][,1],main="Variant Effects")
+%  abline(a=0,b=sd((re[["variant"]][,1])),lwd=2,col=2)
+%  qqnorm(residuals(lme.out2),main="Replicate Effects (Residuals)")
+%  abline(a=0,b=sd(residuals(lme.out2)),lwd=2,col=2)
+%% end.rcode
+
+Looks like a t--distribution with approximately five degrees of
+freedom might be needed for the measurement model:
+
+%% begin.rcode, fig.width=7.5, fig.height=8.5
+%  par(mfrow=c(2,2))
+%  q<-qt(p=((1:nrow(uvKnown) - 0.5)/nrow(uvKnown)),df=5)
+%  emp.q<-sort(residuals(lme.out2))
+%  plot(q,emp.q,main="5df T for Residuals")
+%  abline(a=0,b=coef(lm(emp.q~-1+q)),lwd=2,col=2)
+%  boxplot(residuals(lme.out2)~uvKnown$Exon,main="Residuals by Exon")
+%  ##boxplot(residuals(lme.out2)~uvKnown$p.b,main="Residuals by Pathogenicity")
+%  boxplot(residuals(lme.out2)~uvKnown$label,main="Residuals by Pathogenicity")
+%  ##boxplot(residuals(lme.out2)~uvKnown$Exon + uvKnown$p.b,
+%  ##        main="Residuals by Exon and Pathogenicity")
+%% end.rcode
+
+\section{Setup Data Structures for Full VarCall Model}
+
+This section creates the data structures needed for the JAGS
+estimation procedure.
+
+%% begin.rcode, fig.width=6.5, fig.height=8.5
+%  ##kdel<-as.character(unique(uvMaster$uPOS[uvMaster$P_B=="P"]))
+%  ##kneut<-as.character(unique(uvMaster$uPOS[uvMaster$P_B=="B"]))
+%  kdel<-kdel[!is.na(kdel)]
+%  kneut<-kneut[!is.na(kneut)]
+%  length(kdel)
+%  length(kneut)
+%  known.ids<-c(kdel,kneut)
+%  length(known.ids)
+%  ##table(uvMaster$P_B)
+%  table(uvMaster$label)
+%% end.rcode
+
+\subsection{Variant Labels}
+
+%% begin.rcode, fig.width=6.5, fig.height=8.5
+%  ########################################
+%  ##  Create Structures for JAGS model: ##
+%  ########################################
+%  ##
+%  ## (1) Variant Labels:
+%  ##
+%  num.b<-length(unique(uvDB$batch))
+%  uvDB$variant<-factor(uvDB$variant)
+%  ##known classifications:
+%  known<-rep(0,length(uvDB$variant))
+%  known[uvDB$variant%in%kdel]<-1     ## known disease associated variant
+%  known[uvDB$variant%in%kneut]<-1    ## known disease neutral variant
+%  uv.ids<-unique(levels(factor(uvDB$variant[known==0])))
+%  length(known.ids)
+%  length(uv.ids)
+%  del.known<-rep(NA,length(uvDB$variant))
+%  del.known[uvDB$variant%in%kdel]<-2
+%  del.known[uvDB$variant%in%kneut]<-1
+%  temp<-unique(cbind(as.character(uvDB$variant),as.numeric(uvDB$variant),del.known))
+%  del.known<-temp[,3]
+%  table(del.known)
+%  v.ids<-as.character(temp[,1])
+%  v.codes<-as.numeric(temp[,2])
+%  names(del.known)<-v.ids
+%  names(v.ids)<-v.ids
+%  names(v.codes)<-v.ids
+%  num.v<-length(v.ids)
+%  ## Order variant codes 1 to n.var:
+%  temp<-order(v.codes)
+%  v.codes<-v.codes[temp]
+%  v.ids<-v.ids[temp]
+%  del.known<-del.known[temp]
+%  table(v.codes==sort(v.codes))
+%  table(diff(v.codes))
+%  v.codes[1:4]
+%% end.rcode
+
+\section{JAGS Model Estimation and Summary Code}
+
+\subsection{JAGS Data}
+
+The structure {\texttt{bdat}} is a list containing the data needed for
+fitting the VarCall model using JAGS.
+
+%% begin.rcode, fig.width=6.5, fig.height=8.5
+%  num.b<-length(unique(uvDB$batch))
+%  ##gammaD<-rep(NA,num.b)
+%  ##gammaD[1]<-1.0
+%  uvDB$variant<-factor(uvDB$variant)
+%  num.v<-length(v.ids)
+%  eta0<-rep(NA,num.v)
+%  alpha.value<-as.numeric(summary(lme.out2)$tTable[1:2,1])
+%  ## -- Thin Plate Spline Basis: --
+%  ##x1<-log(uvDB$EventCount.D14 + uvDB$EventCount.D5)
+%  ##x2<-log(uvDB$EventCount.D5) - log(uvDB$EventCount.D14)
+%  ##temp<-gam(rep(1,nrow(uvDB))~ 1+te(x1,x2,bs="tp",k=2))
+%  ##x1<-log(uvDB$Ratio.D5)
+%  ##x2<-log(uvDB$Ratio.D14)
+%  x1<-(uvDB$Ratio.D5^(1/3))
+%  x2<-(uvDB$Ratio.D14^(1/3))
+%  ##  truncate extreme values of the numerator and denominator distributions
+%  q.x1<-quantile(x1,probs=c(truncQ,1.0-truncQ))
+%  x1[x1<q.x1[1]]<-q.x1[1]
+%  x1[x1>q.x1[2]]<-q.x1[2]
+%  q.x2<-quantile(x2,probs=c(truncQ,1.0-truncQ))
+%  x2[x2<q.x2[1]]<-q.x2[1]
+%  x2[x2>q.x2[2]]<-q.x2[2]
+%  temp<-gam(rep(1,nrow(uvDB))~ 1+s(x1,k=4)+s(x2,k=4))
+%  rm(x1,x2)
+%  basis<-model.matrix(temp)
+%  ## -- Natural Spline Basis: --
+%  ##basis<-ns((uvDB$EventCount.D5^(1/3)),df=4,intercept=TRUE)
+%  ##ns.rat<-ns(uvDB$Ratio.D14/uvDB$Ratio.D5,df=3,intercept=TRUE)
+%  ##basis<-cbind(ns.ec5,ns.rat)
+%  ## -- Monotone Spline Basis: --
+%  ##ns.ec5<-iSpline(log(uvDB$EventCount.D5),df=4,intercept=TRUE)
+%  bdat<-list(f.bv=uvDB$lRatio,  ##tdf=t.df,
+%             ns=basis, ##mu.gamma=0.0, 
+%             batchM=uvDB$batch,
+%             variantM=as.numeric(uvDB$variant),
+%             del=as.integer(del.known),
+%             V=num.v, B=num.b,M=length(uvDB$lRatio),
+%             eta=eta0,a.pp=beta.a,b.pp=beta.b,
+%             alpha=alpha.value)
+%% end.rcode
+
+\subsection{Starting Values}
+
+Here we specify a function for generating starting values
+({\texttt{fun.inits()}}) and list of model structures
+({\texttt{fun.parameters.bv}}) that we would like to `monitor.' JAGS
+returns a matrix of samples from the posterior distribution for all
+variables that are monitored.
+
+%% begin.rcode, fig.width=6.5, fig.height=8.5
+%  eta.start<-rnorm(num.v,0,0.25)
+%  beta.start<-rnorm(num.b,0,0.01)
+%  ## hist(beta.start)
+%  del.start<-1+(eta.start<(-0.25))
+%  del.start[!is.na(del.known)]<-NA
+%  ## Parameters to Monitor
+%  fun.parameters.bv <- c("del" , 
+%                         "prob", "P", 
+%                         "beta", "mu.beta","slope.beta",
+%                         "sigma2.beta","gamma","mu.gamma","sigma2.gamma",
+%                         "eta","sigma2.eta","delta") 
+%  ## Function that sets initial values:
+%  fun.inits <- function() {
+%      temp<-numeric(length(known.ids))
+%      names(temp)<-known.ids
+%      temp[known.ids %in% kdel]<-2
+%      temp[known.ids %in% kneut]<-1
+%      gamma0<-exp(rnorm(num.b,mean=0,sd=0.01))
+%      ##gamma0[1]<-NA
+%      return(list(delta=c(2.0,0,0,0,0,0,0),
+%                  beta=beta.start,
+%                  sigma.beta=1.45,
+%                  prec.se1=2.0,
+%                  eta=eta.start,sigma.gamma=0.05,  mu.gamma=0.0,
+%                  gamma=gamma0,
+%                  mu.beta=0.0, slope.beta=(-1.0),
+%                  del=del.start))
+%  }
+%% end.rcode
+
+\subsection{Model Specification}
+
+The MAVE VarCall model is specified in the external file {\texttt{maveModel.R}}:
+
+%% begin.rcode
+%  fun.model.file <- "maveErrVarModel.R"
+%% end.rcode
+
+\subsection{Fit Model}
+
+Fit the model using MCMC.  {\textbf{NOTE: this code chunk may take hours to run
+on a fast numerical server.}}
+
+%% begin.rcode, mdlFit-cache, cache=TRUE, cache.lazy=FALSE
+%  jags.out<-jags(data=bdat,   
+%                 inits=fun.inits,  
+%                 parameters=fun.parameters.bv,
+%                 fun.model.file,
+%                 n.chains=1, 
+%                 n.iter=mcmc.pars$iter,
+%                 n.burnin=mcmc.pars$burn,
+%                 n.thin=mcmc.pars$thin,
+%                 DIC=F,progress.bar="none")
+%% end.rcode
+
+\subsection{Model Summaries}
+
+The matrix of sampled model parameter values is in the structure
+{\texttt{jags.out\$BUGSoutput\$sims.matrix}}.  In the following code
+chunk, we extract from this matrix blocks of key parameter values.
+For example, as its name suggests, {\texttt{eta.samps}} contains
+samples form the posterior distribution (rows) of the variant effect
+(eta) values for each of the variants (columns).
+
+%% begin.rcode, fig.width=3.5, fig.height=4.0
+% dim(jags.out$BUGSoutput$sims.matrix)
+% mpars1<-colnames(jags.out$BUGSoutput$sims.matrix)[substr(colnames(jags.out$BUGSoutput$sims.matrix),1,3)=="mu."]
+% mpars1<-c(mpars1,"slope.beta")
+% mu.samps<-jags.out$BUGSoutput$sims.matrix[,mpars1]
+% mu.samps<-cbind(rep(bdat$alpha[1],nrow(mu.samps)),
+%                 rep(bdat$alpha[2],nrow(mu.samps)),
+%                 mu.samps)
+% colnames(mu.samps)[1:2]<-c("alpha[1]","alpha[2]")
+% rm(mpars1)
+% var.samps<-jags.out$BUGSoutput$sims.matrix[,(substr(colnames(jags.out$BUGSoutput$sims.matrix),1,5)=="sigma")]
+% beta.samps<-jags.out$BUGSoutput$sims.matrix[,paste("beta[",1:bdat$B,"]",sep="")]
+% gamma.samps<-jags.out$BUGSoutput$sims.matrix[,paste("gamma[",1:bdat$B,"]",sep="")]
+% eta.samps<-jags.out$BUGSoutput$sims.matrix[,paste("eta[",1:bdat$V,"]",sep="")]
+% delta.samps<-jags.out$BUGSoutput$sims.matrix[,paste("delta[",1:7,"]",sep="")]
+% del.samps<-jags.out$BUGSoutput$sims.matrix[,paste("del[",1:bdat$V,"]",sep="")]
+% colnames(eta.samps)<-v.ids
+% colnames(del.samps)<-v.ids
+%% end.rcode
+
+The following code chunk we compute Rao--Blackwellized (RB) estimates of
+the posterior probabilities that each variant is pathogenic.
+
+%% begin.rcode, prdv-cache, cache=TRUE, cache.lazy=FALSE
+% lpp.threshold<-100    
+% subst<-(!(colnames(del.samps)%in%known.ids))
+% prdv.samps<-fdv(eta.samps,m.s=mu.samps,
+%                 v.s=var.samps,lpp.cap=lpp.threshold,
+%                 prior.aa=beta.a,prior.bb=beta.b) ##mean=0.35, ESS = 10
+% names(prdv.samps)
+% names(prdv.samps$prdv)<-colnames(eta.samps)
+% names(prdv.samps$lPostOdds)<-colnames(eta.samps) 
+% names(prdv.samps$lBF)<-colnames(eta.samps)       
+%% end.rcode
+
+Here we compare the RB estimates to the Monte Carlo averages of the
+binary variant--specific pathogenicity indicator variables (these two
+sets of estimates should be very highly correlated):
+
+%% begin.rcode, fig.width=3.5, fig.height=4.0
+% subst<-(!(colnames(del.samps)%in%known.ids))
+% del.hat<-(apply(del.samps,2,mean) - 1)
+% cor(prdv.samps$prdv[subst],del.hat[subst])
+% plot(prdv.samps$prdv[subst],del.hat[subst],
+%      xlab="RB Estimates",ylab="MC Estimates",las=1)
+% abline(a=0,b=1,col=4,lwd=2)
+%% end.rcode
+
+Plot histograms of the variant effects estimates (eta's) and the
+estimated posterior probabilities of pathogenicity:
+
+%% begin.rcode, fig.width=6.5, fig.height=7.0
+% eta.hat<-(apply(eta.samps,2,mean))
+% eta.ll<-(apply(eta.samps,2,quantile,probs=0.025))
+% eta.ul<-(apply(eta.samps,2,quantile,probs=0.975))
+% hist(del.hat,nclass=100,main="Estimated Pr(Path|Variant,Data)")
+% hist(eta.hat,nclass=100,main="Estimated Variant Effects")
+%% end.rcode
+
+Check the observed distribution of the posterior expected standardized
+measurement model residuals.  The model assumes a five degree of
+freedom Student's t--distribution.  We provide QQ plots here for that
+specification and three others:
+
+%% begin.rcode, fig.width=6.5, fig.height=8.5
+% mm.batch<-model.matrix(~-1+as.factor(bdat$batchM))
+% mm.var<-model.matrix(~-1+as.factor(bdat$variantM))
+% dim(mm.batch)
+% dim(mm.var)
+% dim(eta.samps)
+% dim(beta.samps)
+% dim(delta.samps)
+% dim(bdat$ns)
+% lin.pred<-((gamma.samps%*%t(mm.batch))*(eta.samps%*%t(mm.var)))+(beta.samps%*%t(mm.batch))
+% dim(lin.pred)
+% prec.reps<-exp(delta.samps %*% t(bdat$ns))
+% prec.reps.mu<-apply(prec.reps,2,mean)
+% lin.pred.v <- ((gamma.samps^2)%*%t(mm.batch))/prec.reps
+% ##lin.pred.v <- sweep(((gamma.samps^2)%*%t(mm.batch)),MARGIN=1,
+% ##                    STATS=jags.out$BUGSoutput$sims.matrix[,"sigma2.reps"],
+% ##                    FUN="*")
+% lin.pred.sd<-sqrt(lin.pred.v)
+% rm(lin.pred.v,mm.batch,mm.var,prec.reps)
+% summary(as.numeric(apply(lin.pred.sd,2,mean)))
+% expected.resids<-sweep(-lin.pred,MARGIN=2,STATS=bdat$f.bv,FUN="+")
+% expected.resids<-apply(expected.resids,2,mean)
+% lin.pred.sd<-apply(lin.pred.sd,2,mean)
+% expected.stresids<-(expected.resids/lin.pred.sd)
+% order.er<-order(expected.stresids)
+% summary(expected.resids)
+% lin.pred<-apply(lin.pred,2,mean)
+% summary(lin.pred)
+% par(mfrow=c(2,2))
+% qqplot2(x=expected.stresids,tdf=101) ##normal qqplot w/ error bars
+% qqplot2(x=expected.stresids,tdf=25) ##t-25 qqplot w/ error bars
+% qqplot2(x=expected.stresids,tdf=10) ##t-10 qqplot w/ error bars
+% qqplot2(x=expected.stresids,tdf=5) ##t-5 qqplot w/ error bars
+%% end.rcode
+
+Here is large rendering of the five degree of freedom QQ plot:
+
+%% begin.rcode, fig.width=6.5, fig.height=8.5
+% qqplot2(x=expected.stresids,tdf=101,
+%         titl="Expected Standardized Residuals Normal Model")
+%% end.rcode
+
+
+Batch mean (beta's) and variant effect (eta's) normal QQ plots (note
+the beta's are {\textit{not}} centered at zero):
+
+%% begin.rcode, fig.width=7.5, fig.height=3.5
+% ## Batch and Variant QQ plots.
+% par(mfrow=c(1,2))
+% ## (1) batch effects
+% expected.batch.effects<-apply(beta.samps,2,mean)
+% sd.batch.effects<-apply(beta.samps,2,sd)
+% qqnorm(expected.batch.effects,main="Normal QQ Plot of Posterior Expected Batch Effects",las=1,cex.main=0.65) 
+% abline(a=0,b=sd(expected.batch.effects))
+% ## (2) variant effects, need to subtact mixture means, ie calc residuals:
+% eta.mean<-sweep(1*(del.samps==1),1,STATS=mu.samps[,"alpha[1]"],FUN="*")+sweep(1*(del.samps==2),1,STATS=mu.samps[,"alpha[2]"],FUN="*")
+% eta.var<-sweep(1*(del.samps==1),1,STATS=var.samps[,"sigma2.eta[1]"],FUN="*")+sweep(1*(del.samps==2),1,STATS=var.samps[,"sigma2.eta[2]"],FUN="*")
+% eta.resids<-(eta.samps-eta.mean)/sqrt(eta.var)
+% expected.eta.resids<-apply(eta.resids,2,mean)
+% qqnorm(expected.eta.resids,main="Normal QQ Plot of Posterior Expected Variant Innovations",las=1,cex.main=0.65)
+% abline(a=0,b=sd(expected.eta.resids))
+%% end.rcode
+
+Boxplots of the batch mean (beta's) and scale (gamma's) random effects
+distributions:
+
+%% begin.rcode, fig.width=6.5, fig.height=8.0
+% batch.dm<-data.frame(batch=rep(1:ncol(beta.samps),each=nrow(beta.samps)),
+%                      beta=matrix(beta.samps,ncol=1,byrow=F))
+% par(mfrow=c(2,1))
+% boxplot(beta~batch,data=batch.dm,las=2,cex.axis=0.60,outline=F,
+%         pars=list(boxwex=0.6,crt=90),
+%         main="Posterior distribution of Batch Offset Parameters",
+%         ylab="Batch Offset",xlab="Batch Number",cex.main=0.75)
+% abline(h=0,lwd=2,col=2)
+% gamma.dm<-data.frame(batch=rep(1:ncol(gamma.samps),each=nrow(gamma.samps)),
+%                      gamma=matrix(gamma.samps,ncol=1,byrow=F))
+% boxplot(gamma~batch,data=gamma.dm,las=2,cex.axis=0.60,outline=F,
+%         pars=list(boxwex=0.6,crt=90),
+%         main="Posterior distribution of Batch Scale Parameters",
+%         ylab="Batch Scale",xlab="Batch Number",cex.main=0.75)
+% abline(h=1,lwd=2,col=2)
+%% end.rcode
+
+A scatter plot of posterior mean batch means versus batch scalings:
+
+%% begin.rcode, fig.width=3.5, fig.height=4.0
+% plot(apply(gamma.samps,2,mean),apply(beta.samps,2,mean),las=1,
+%      ylab="Batch Offset",xlab="Batch Scale")
+%% end.rcode
+
+\subsection{Graphical Summaries of Parameter Estimates}
+
+Histograms of the marginal posterior distributions of the variance
+components: the measurment error models {\texttt{delta}} parameters,
+the variance of the batch mean random effects {\texttt{sigma2.beta}}
+and the variance of the logged batch scale random effects
+{\texttt{sigma2.gamma}}.
+
+%% begin.rcode, fig.width=7.5, fig.height=8.5
+% par(mfrow=c(3,3))
+% ## delta[i]:
+% for (i in 1:7){
+%   hist(delta.samps[,i],cex.main=0.65,
+%        prob=T,nclass=50,xlab=paste0("delta",i),
+%        main=paste0("Prior versus Posterior -- delta",i))
+%   if (i==1){
+%      lines(grid<-seq(min(delta.samps[,i]),max(delta.samps[,i]),by=0.01),
+%            dnorm(grid,mean=0,sd=4),col=3,lwd=2)
+%   }
+%   if (i>1){
+%      lines(grid<-seq(min(delta.samps[,i]),max(delta.samps[,i]),by=0.01),
+%            dnorm(grid,mean=0,sd=10),col=3,lwd=2)
+%   }
+%   ##lines(grid<-seq(min(delta.samps[,i]),max(delta.samps[,i]),by=0.01),
+%   ##      dgamma(grid,1.0,0.1),col=3,lwd=2)
+% }
+% ## sigma2.beta
+% hist(sqrt(jags.out$BUGSoutput$sims.matrix[,"sigma2.beta"]),cex.main=0.65,
+%      prob=T,nclass=50,xlab="sigma2.beta",main="Prior versus Posterior -- sigma2.beta")
+% lines(grid<-seq(0,max(sqrt(jags.out$BUGSoutput$sims.matrix[,"sigma2.beta"])),by=0.01),
+%       2*dt(grid,df=1),col=3,lwd=2)
+% ## sigma2.gamma
+% hist(sqrt(jags.out$BUGSoutput$sims.matrix[,"sigma2.gamma"]),cex.main=0.65,
+%      prob=T,nclass=50,xlab="sigma^2_gamma",main="Prior versus Posterior -- sigma2.gamma")
+% lines(grid<-seq(0,max(sqrt(jags.out$BUGSoutput$sims.matrix[,"sigma2.gamma"])),by=0.01),
+%       2*dt(grid,df=1),col=3,lwd=2)
+%% end.rcode
+
+Histograms of the marginal posterior distributions of the
+component--wise variances (they are constrained to be equal) for the
+two--component normal mixture model for the variant effects (eta's).
+
+%% begin.rcode, fig.width=7.5, fig.height=4.5
+% par(mfrow=c(1,2))
+% ## sigma2.eta[1]
+% hist(sqrt(jags.out$BUGSoutput$sims.matrix[,"sigma2.eta[1]"]),cex.main=0.65,
+%      prob=T,nclass=50,xlab="sigma.eta[1]",main="Prior versus Posterior -- sigma.eta[1]")
+% lines(grid<-seq(0,max(sqrt(jags.out$BUGSoutput$sims.matrix[,"sigma2.eta[1]"])),by=0.01),
+%       (2*24)*dt(grid*24,df=24),col=3,lwd=2)
+% ## sigma2.eta[2]
+% hist(sqrt(jags.out$BUGSoutput$sims.matrix[,"sigma2.eta[2]"]),cex.main=0.65,
+%      prob=T,nclass=50,xlab="sigma.eta[2] == sigma.eta[1]",
+%      main="Prior versus Posterior -- sigma_eta[2]==sigma_eta[1]")
+% lines(grid<-seq(0,max(sqrt(jags.out$BUGSoutput$sims.matrix[,"sigma2.eta[2]"])),by=0.01),
+%       (2*24)*dt(grid*24,df=24),col=3,lwd=2)
+%% end.rcode
+
+Histograms of the marginal posterior distributions of the mean of the
+batch mean parameters (\texttt{mu.beta}) and the mean of the logged
+batch scale parameters ({\texttt{mu.gamma}}).
+
+%% begin.rcode, fig.width=6.5, fig.height=7.5
+% ##Mean parameters:
+% par(mfrow=c(2,2))
+% ## mu.beta
+% hist(jags.out$BUGSoutput$sims.matrix[,"mu.beta"],cex.main=0.85,
+%      prob=T,nclass=50,xlab="mu.beta",
+%      main="Prior versus Posterior -- mu.beta")
+% abline(h=(1/20),col=3,lwd=2)
+% ## mu.beta
+% hist(jags.out$BUGSoutput$sims.matrix[,"slope.beta"],cex.main=0.85,
+%      prob=T,nclass=50,xlab="slope.beta",
+%      main="Prior versus Posterior -- slope.beta")
+% lines(grid<-seq(min(jags.out$BUGSoutput$sims.matrix[,"slope.beta"]),
+%                 max(jags.out$BUGSoutput$sims.matrix[,"slope.beta"]),by=0.01),
+%      2*dnorm(grid,mean=(-1.0),sd=1),col=3,lwd=2)
+% ## mu.gamma
+% hist(jags.out$BUGSoutput$sims.matrix[,"mu.gamma"],cex.main=0.85,
+%      prob=T,nclass=50,xlab="mu.gamma",
+%      main="Prior versus Posterior -- mu.gamma")
+% lines(grid<-seq(min(jags.out$BUGSoutput$sims.matrix[,"mu.gamma"]),
+%                 max(jags.out$BUGSoutput$sims.matrix[,"mu.gamma"]),by=0.01),
+%      2*dnorm(grid,mean=0,sd=1),col=3,lwd=2)
+%% end.rcode
+
+\subsection{Table of Estimated Variant Effects}
+
+Assemble a table of variant--level results for export:
+
+%% begin.rcode, fig.width=7.5, fig.height=8.5
+% pr.del<-prdv.samps$prdv
+% length(pr.del)
+% pr.del[1:3]
+% tabl<-annot
+% colnames(tabl)[23]<-"variant"
+% dim(tabl)
+% length(unique(tabl$variant))
+% table(rownames(tabl)==tabl[,"variant"])
+% tabl<-data.frame(tabl)
+% tabl$PrDel<-rep(NA,nrow(tabl))
+% table(names(pr.del) %in% rownames(tabl))
+% tabl[names(pr.del),"PrDel"]<-pr.del
+% table(tabl$P_B[is.na(tabl$PrDel)])
+% table(tabl$P_B[!is.na(tabl$PrDel)])
+% lp.odds<-prdv.samps$lPostOdds
+% tabl$lPostOdds<-rep(NA,nrow(tabl))
+% table(names(lp.odds) %in% rownames(tabl))
+% tabl[names(lp.odds),"lPostOdds"]<-lp.odds
+% lbf<-prdv.samps$lBF
+% tabl$logBF<-rep(NA,nrow(tabl))
+% table(names(lbf) %in% rownames(tabl))
+% tabl[names(lbf),"logBF"]<-lbf
+% tabl$Status<-rep("VUS",nrow(tabl))
+% tabl$Status[rownames(tabl)%in%kdel]<-"Path"
+% tabl$Status[rownames(tabl)%in%kneut]<-"Neut"
+% table(tabl$Status)
+% temp<-apply(eta.samps,2,mean,na.rm=TRUE)
+% temp<-temp[rownames(tabl)]
+% table(names(temp) == rownames(tabl))
+% tabl$eta <- temp; rm(temp)
+% eta.ll<-(apply(eta.samps,2,quantile,probs=0.025))
+% eta.ul<-(apply(eta.samps,2,quantile,probs=0.975))
+% tabl$eta.ll<-rep(NA,nrow(tabl))
+% tabl[names(eta.ll),"eta.ll"]<-eta.ll
+% tabl$eta.ul<-rep(NA,nrow(tabl))
+% tabl[names(eta.ul),"eta.ul"]<-eta.ul
+%% end.rcode
+
+%% begin.rcode
+%  ## Output Table of Estimates:
+%  write.table(tabl,file="MAVEpostProbs.csv",quote=TRUE,sep=",",col.names=TRUE)
+%% end.rcode
+
+\section{Plots for Supplemental Materials}
+
+These are individual plots for use in the supplement:
+
+%% begin.rcode
+%  pdf("ResidualQQ.pdf",width=8,height=8)
+%  qqplot2(x=expected.stresids,tdf=101,
+%          titl="Normal QQ Plot of Expected Standardized Residuals")
+%  dev.off()
+%  
+%  pdf("PrDelHistogram.pdf",width=8,height=8)
+%  hist(del.hat,nclass=100,
+%       main="Estimated Pr(Path | Variant, Data)\n All Assayed Variants",
+%       las=1)
+%  dev.off()
+%  
+%  pdf("EtaHistogram.pdf",width=8,height=6)
+%  hist(eta.hat,nclass=100,cex.main=1.4,
+%       main="Estimated Variant Effects (Eta's)\n All Assayed Variants",
+%       las=1)
+%  dev.off()
+%  
+%  pdf("BatchMeanQQ.pdf",width=8,height=8)
+%  qqplot2(expected.batch.effects,tdf=1000,
+%         titl="Normal QQ Plot of Posterior Expected Batch Mean Effects")
+%  dev.off()
+%  
+%  batch.scale.effects<-log(apply(gamma.samps,2,mean))
+%  pdf("BatchScaleQQ.pdf",width=8,height=8)
+%  qqplot2(batch.scale.effects,tdf=1000,
+%         titl="Normal QQ Plot of Posterior Logged Expected Scale Effects")
+%  dev.off()
+%  
+%  pdf("VariantQQ.pdf",width=8,height=8)
+%  qqplot2(expected.eta.resids,tdf=1000,
+%          titl="Normal QQ Plot of Posterior Expected Mean--Adjusted Variant Innovations")
+%  dev.off()
+%  
+%  pdf("BatchMeanBPlot.pdf",width=10,height=6)
+%  boxplot(beta~batch,data=batch.dm,las=2,outline=F,
+%           pars=list(boxwex=0.6,crt=90),
+%          main="Posterior distribution of Batch Mean Parameters `Beta'",
+%          ylab="Batch Mean",xlab="Batch Number",cex.main=1.5)
+%  abline(h=0,lwd=2,col=2)
+%  dev.off()
+%  
+%  pdf("BatchScaleBPlot.pdf",width=10,height=6)
+%  boxplot(gamma~batch,data=gamma.dm,las=2,cex.axis=0.60,outline=F,
+%          pars=list(boxwex=0.6,crt=90),
+%          main="Posterior distribution of Batch Scale Parameters `Gamma'",
+%          ylab="Batch Scale",xlab="Batch Number",cex.main=1.5)
+%  abline(h=1,lwd=2,col=2)
+%  dev.off()
+%  
+%  pdf("BatchLocationVsScale.pdf",width=8,height=8)
+%  plot(apply(beta.samps,2,mean),apply(gamma.samps,2,mean),las=1,
+%       main="Scatter Plot of Batch Mean Versus Scale Adjustments",
+%       xlab="Batch Mean",ylab="Batch Scale",pch=16)
+%  dev.off()
+%% end.rcode
+
+
+\section{Wrap--Up}
+
+%% begin.rcode
+%  gc(); save.image()
+%% end.rcode
+
+\end{document}
+
+
+
+
+%% begin.rcode, fig.width=6.5, fig.height=8.5
+%% end.rcode
+
+
+%% begin.rcode, fig.width=7.5, fig.height=3.5
+%% end.rcode
+
+%% begin.rcode, fig.width=6.5, fig.height=8.0
+%% end.rcode
+
+%% begin.rcode, fig.width=3.5, fig.height=4.0
+%% end.rcode
+
+%% begin.rcode, fig.width=7.5, fig.height=8.5
+% par(mfrow=c(2,2))
+%% end.rcode
+
+%% begin.rcode, fig.width=7.5, fig.height=8.5
+% par(mfrow=c(2,2))
+%% end.rcode
+
+% end.rcode
+
+\subsubsection{Normalization By Exon, Combining Replicates (Not Used)}
+
+Implement the exon--by--exon normalization scheme and generate
+plots of the data and the estimated positional normalization curve.
+
+%% begin.rcode, posFit1-cache, cache=TRUE, cache.lazy=FALSE
+%   gam.pos<-mgcv::gam(lRatio ~  s(PosStd,bs="ad",by=Exon),data=uvNorm)
+%   gam.pos2<-mgcv::gam(lRatio ~ s(PosStd,bs="tp",by=Exon),data=uvNorm)
+%   temp<-predict(gam.pos,newdata=uvNorm,se.fit=TRUE)
+%   uvNorm$adSmooth<-temp$fit
+%   uvNorm$adSmoothSE<-temp$se.fit 
+%   temp<-predict(gam.pos2,newdata=uvNorm,se.fit=TRUE)
+%   uvNorm$tpSmooth<-temp$fit
+%   uvNorm$tpSmoothSE<-temp$se.fit
+%   posFits<-unique(uvNorm[,c("variant","Exon","PosStd","adSmooth","adSmoothSE",
+%                             "tpSmooth","tpSmoothSE")])
+%   uExon<-unique(as.character(uvNorm$Exon))
+%   nExon<-length(uExon)
+%   pdf("SmoothFitsFnl.pdf",height=8.5,width=11)
+%   par(mfrow=c(2,1))
+%   ## Adaptive Smoooth
+%   for (i in 1:nExon){
+%   plot(uvNorm$PosStd[uvNorm$Exon==uExon[i]],
+%        uvNorm$lRatio[uvNorm$Exon==uExon[i]],las=1,
+%        ylab="logRatio",xlab="Standardized Position",
+%        main=paste0("Adaptive Smooth Fit to Exon ",uExon[i]),xlim=c(0,1.12))
+%   uRep<-unique(uvNorm$replicate[(uvNorm$Exon==uExon[i])])
+%   for (j in 1:length(uRep)){
+%     points(uvNorm$PosStd[(uvNorm$Exon==uExon[i])&(uvNorm$replicate==uRep[j])],
+%          uvNorm$lRatio[(uvNorm$Exon==uExon[i])&(uvNorm$replicate==uRep[j])],
+%          col=j,pch=16)
+%   }
+%   ##points(uvNorm$PosStd[(uvNorm$Exon==uExon[i])&(uvNorm$eventtype=="Synonymous")],
+%   ##     uvNorm$lRatio[(uvNorm$Exon==uExon[i])&(uvNorm$eventtype=="Synonymous")],
+%   ##     col=3,pch=16)
+%   legend("topright",inset=0.01,col=c(1:length(uRep)),lwd=5,legend=uRep)
+%   ##legend("topright",inset=0.05,col=c(1,3),lwd=5,legend=c("Missense","Synonymous"))
+%   lines(posFits$PosStd[posFits$Exon==uExon[i]],
+%         posFits$adSmooth[posFits$Exon==uExon[i]],col=2,lwd=3)
+%   lines(posFits$PosStd[posFits$Exon==uExon[i]],
+%         posFits$adSmooth[posFits$Exon==uExon[i]]+2*posFits$adSmoothSE[posFits$Exon==uExon[i]],
+%         col=2,lwd=3,lty=2)
+%   lines(posFits$PosStd[posFits$Exon==uExon[i]],
+%         posFits$adSmooth[posFits$Exon==uExon[i]]-2*posFits$adSmoothSE[posFits$Exon==uExon[i]],
+%         col=2,lwd=3,lty=2)
+%   ## Thin Plate Smoooth
+%   plot(uvNorm$PosStd[uvNorm$Exon==uExon[i]],
+%        uvNorm$lRatio[uvNorm$Exon==uExon[i]],las=1,
+%        ylab="logRatio",xlab="Standardized Position",
+%        main=paste0("Thin Plate Smooth Fit to Exon ",uExon[i]),
+%        type="n",xlim=c(0,1.12))
+%   for (j in 1:length(uRep)){
+%     points(uvNorm$PosStd[(uvNorm$Exon==uExon[i])&(uvNorm$replicate==uRep[j])],
+%          uvNorm$lRatio[(uvNorm$Exon==uExon[i])&(uvNorm$replicate==uRep[j])],
+%          col=j,pch=16)
+%   }
+%   ##points(uvNorm$PosStd[(uvNorm$Exon==uExon[i])&(uvNorm$eventtype=="Synonymous")],
+%   ##     uvNorm$lRatio[(uvNorm$Exon==uExon[i])&(uvNorm$eventtype=="Synonymous")],
+%   ##     col=3,pch=16)
+%   legend("topright",inset=0.01,col=c(1:length(uRep)),lwd=5,legend=uRep)
+%   ##legend("topright",inset=0.05,col=c(1,3),lwd=5,legend=c("Missense","Synonymous"))
+%   lines(posFits$PosStd[posFits$Exon==uExon[i]],
+%         posFits$tpSmooth[posFits$Exon==uExon[i]],col=2,lwd=3)
+%   lines(posFits$PosStd[posFits$Exon==uExon[i]],
+%         posFits$tpSmooth[posFits$Exon==uExon[i]]+2*posFits$tpSmoothSE[posFits$Exon==uExon[i]],
+%         col=2,lwd=3,lty=2)
+%   lines(posFits$PosStd[posFits$Exon==uExon[i]],
+%         posFits$tpSmooth[posFits$Exon==uExon[i]]-2*posFits$tpSmoothSE[posFits$Exon==uExon[i]],
+%         col=2,lwd=3,lty=2)
+%   }
+%   dev.off()
+%% end.rcode
