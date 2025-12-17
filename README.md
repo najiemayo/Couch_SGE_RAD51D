@@ -1,0 +1,1 @@
+This repository provides the VarCall model tool used in the analysis of high throughput CRISPR based saturated genome editing (SGE) data, one type of multiplexed assays of variant effects (MAVEs).  The VarCall model mainly uses R and the R package rjags to perform the Bayesian two Gaussian components modeling.
