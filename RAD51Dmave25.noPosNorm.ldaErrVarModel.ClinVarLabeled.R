@@ -7,12 +7,6 @@
 library(knitr)
 knit("RAD51Dmave25.noPosNorm.ldaErrVarModel.ClinVarLabeled.Rtex")
 
-uvDB1<-read.delim("aggregated_RAD51D_E1_10_no3_SNV.tsv")
-uvDB2<-read.delim("aggregated_RAD51D_E1_10_no3_V3.tsv")
-
-uvDB<-read.delim("aggregated_RAD51D_E1_9_V3.tsv")
-uvDB<-read.delim("aggregated_E4_8_SNV.tsv")
-
 uvDB<-read.delim("aggregated_RAD51D_E1_10_SNV_9_12_2025.tsv")
 
 35119543_T_G (E1 aa24); 35106459_G_A (E6 aa168); 35103282_G_A (E8, aa237)
