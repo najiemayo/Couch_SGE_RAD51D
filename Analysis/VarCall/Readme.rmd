@@ -1,0 +1,8 @@
+This folder has the code and data for VarCall analysis.
+
+To run the code:
+
+
+1. Download all files to your local folder
+2. Run Rtex in R as following: 
+  
