@@ -7,4 +7,4 @@ To run the code:
 2. Run Rtex in R as following: 
   
 library(knitr)
-knit("report.Rtex")
+knit("RAD51Dmave25.noPosNorm.ldaErrVarModel.ClinVarExclude.Rtex")
