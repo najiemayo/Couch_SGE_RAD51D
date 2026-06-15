@@ -6,5 +6,6 @@ To run the code:
 1. Download all files to your local folder
 2. Run Rtex in R as following: 
   
-library(knitr)
-knit("RAD51Dmave25.noPosNorm.ldaErrVarModel.ClinVarExclude.Rtex")
+Open RAD51Dmave25.noPosNorm.ldaErrVarModel.ClinVarExclude.Rtex in Rstudio. choose Knit PDF from the toolbar. 
+
+Note: make sure the relative path is correct. 
