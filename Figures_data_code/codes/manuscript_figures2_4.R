@@ -9,7 +9,7 @@ library(tidyr)
 library(dplyr)
 
 
-resdir <- 'respath'
+resdir <- 'rpath'
 allfs <- read_excel("For figure 2_092325.xlsx", sheet = "SNV")
 allfs <- allfs %>% mutate(uPOS = paste(POS_hg38, REF, ALT, sep = "_")) %>% mutate(EventType := !!sym('variant class'))%>%
   mutate(GRCh38Location = POS_hg38)
@@ -31,6 +31,9 @@ allfs$Exon <- as.factor(allfs$Exon)
 allfs$functional.prediction <- factor(allfs$`Functional category`, levels = c("P strong", "P moderate", "P supporting", "VUS", "B supporting", "B moderate", "B strong"))
 
 ## Figure 2A
+dt2plot <- allfs
+mycol5 <- c("#a3a500", "#0059a3", "#4f9c9c", "#33BBEE", "#db6d00", "#800A01")
+names(mycol5) <- levels(dt2plot$EventType)
 
 p <- dt2plot %>%
   ggplot( aes(x=Eta, fill=EventType)) +  
@@ -126,25 +129,48 @@ ggsave(paste0(resdir, "/Figure2C_barplot_percentage_all.tif"),plot = p, width = 
 
 ### F2D
 ## barplot
+library(ggh4x)
 allfs$Exon <- factor(allfs$Exon, levels = c("E1",  "E2", "E3", "E4",  "E5",  "E6",  "E7",  "E8",  "E9",  "E10"))
 dt2plot <- allfs  %>% group_by(Exon, EventType, functional.prediction) %>% count() 
 df <- dt2plot %>% group_by(Exon, EventType) %>% mutate(percent = prop.table(n))
-df$cat <- factor(df$EventType, levels = c("Silent", "Intronic", "Missense", "Canonical splice",  "Nonsense", "UTR"))
+df$EventType <- gsub("Canonical splice", "Canonical\nsplice", df$EventType)
+
+df$cat <- factor(df$EventType, levels = c("Silent", "Intronic", "Missense", "Canonical\nsplice", "Nonsense", "UTR"))
+
+
+n_panels <- 6
+
+# All panels: ticks but no labels; bottom panel: ticks + labels
+x_scales <- c(
+  rep(list(scale_x_discrete(
+    limits = c("E1","E2","E3","E4","E5","E6","E7","E8","E9","E10"),
+    labels = NULL  # show ticks but hide labels
+  )), n_panels - 1),
+  list(scale_x_discrete(
+    limits = c("E1","E2","E3","E4","E5","E6","E7","E8","E9","E10")
+    # bottom panel: labels shown normally
+  ))
+)
 
 p <- ggplot(df, aes(x = Exon, y = percent*100, fill = functional.prediction)) +
   geom_bar(stat = "identity", width = 0.5) +
   scale_fill_manual(values = mycol7[(df$functional.prediction)]) +
-  facet_wrap(.~fct_rev(cat), ncol = 1)+
-  xlab("Exon") + ylab("Percentage %")+
-  theme(strip.text.x = element_text(size = 65))+
-  theme_classic()+ #theme(text = element_text(family = "Calibri"))+
-  theme(axis.text=element_text(size=ylabsize),
-        axis.title=element_text(size=ylabsize))+
-  theme(legend.position = "right", legend.title = element_blank(), legend.text=element_text(size = legdsize)) 
+  facet_wrap(.~fct_rev(cat), ncol = 1, strip.position = "right", scales = "free_x") +
+  xlab("Exon") + ylab("Percentage %") +
+  theme_classic() +
+  theme(
+    strip.text.y = element_text(size = 15, angle = 0),
+    axis.text = element_text(size = ylabsize),
+    axis.title = element_text(size = ylabsize),
+    legend.position = "right", 
+    legend.title = element_blank(), 
+    legend.text = element_text(size = legdsize)
+  ) +
+  facetted_pos_scales(x = x_scales)
+
 p
 
-
-ggsave(paste0(resdir, "/Figure2E_barplot_percentage_byexon.tif"),plot = p, width = 10, height = 5, units = "in", device = "tiff", dpi = 300, limitsize = FALSE)
+ggsave(paste0(resdir, "/Figure2D_barplot_percentage_byexon.tif"),plot = p, width = 10, height = 5, units = "in", device = "tiff", dpi = 300, limitsize = FALSE)
 
 
 ## Figure4
@@ -154,12 +180,10 @@ ggsave(paste0(resdir, "/Figure2E_barplot_percentage_byexon.tif"),plot = p, width
 # # combining by AApos, heatmap all exons
 dt2plot0 <- read_excel("RAD51D MAVE heatmap source data_092225updated.xlsx")
 
-
 dt2plot0 <- dt2plot0 %>% mutate(AltAA = substr(AA, nchar(AA), nchar(AA))) %>% mutate(AApos = as.numeric(gsub("\\D", "", AA)))
 unique(dt2plot0$AltAA)
 dt2plot0$AltAA[which(dt2plot0$AltAA == "X")] <- "stop"
 
-# dt2plot0$AltAA <- factor(dt2plot0$AltAA, levels = c("Int", "A", "V", "I", "L", "M", "F", "Y", "W", "S", "T", "N", "Q", "C", "G", "P", "R", "H",  "K","D",  "E", "stop"))
 dt2plot0$AltAA <- factor(dt2plot0$AltAA, levels = c( "A", "V", "I", "L", "M", "F", "Y", "W", "S", "T", "N", "Q", "C", "G", "P", "R", "H",  "K","D",  "E", "stop"))
 dt2plot0$functional.prediction <- factor(dt2plot0$`Functional category`, levels = c("P strong", "P moderate","P supporting", "B strong","B moderate", "B supporting", "VUS"))
 
@@ -187,8 +211,6 @@ AAposs <- AAposs[order(AAposs)]
 mybreaks <- AAposs[c(seq(50, length(AAposs), 50))]
 mybreaks <- c(1, mybreaks,  AAposs[length(AAposs)])
 
-##mycol8 <- c("#800000","#FFA500", "#FFD700", "gray",  "#00b4c5" ,"#0073e6", "#0059a3", "white") ## "#CC5500",  "#800020",  
-
 mycol8 <- c("#B22222","#FFA500", "#FFD700", "gray",  "#00FFFF","#66ddff", "#00b4c5", "white") ## 
 names(mycol8) <- levels(dt2plot$functional.prediction)
 desired_levels <- levels(dt2plot$functional.prediction)[-length(levels(dt2plot$functional.prediction))]
@@ -207,3 +229,5 @@ p1 <- ggplot(dt2plot, aes(x = AApos, y = (AltAA), fill = functional.prediction))
   theme(legend.position = "right", legend.title=element_blank(), legend.text=element_text(size = legdsize*1.5)) +
   theme(axis.line.y = element_blank(), axis.text.y = element_text(hjust = 0.5, margin = margin(r = 2)), 
         axis.text.x = element_text(vjust = 1)) # remove y axis line, align letters in center
+
+ggsave(paste0(resdir, "/Figure4A.tif"),plot = p1, width = 16, height = 5, units = "in", device = "tiff", dpi = 300, limitsize = FALSE)
