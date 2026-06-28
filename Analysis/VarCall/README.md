@@ -62,9 +62,42 @@ The output files will be `RAD51Dmave25.noPosNorm.ldaErrVarModel.ClinVarExclude.t
   - logBF: the log Bayes factor
   - eta: the estimated effect size
   - eta.ll, eta.ul: 95% lower bound and upper bound of eta
-The running time for the full data set takes ~4-6 hours. Due to the stochastic nature of the model, there might be some minor differences in the results, but it should converge when the iteration is long enough.
+The running time for the full data set takes ~12 hours (see R sessionInfo at the end of this page). Due to the stochastic nature of the model, there might be some minor differences in the results, but it should converge when the iteration is long enough.
 
 # License
+
+## R sessionInfo()
+
+> sessionInfo()
+R version 4.5.1 (2025-06-13)
+Platform: x86_64-pc-linux-gnu
+Running under: Rocky Linux 8.10 (Green Obsidian)
+
+Matrix products: default
+BLAS:   /usr/lib64/libblas.so.3.8.0 
+LAPACK: /usr/lib64/liblapack.so.3.8.0  LAPACK version 3.8.0
+
+locale:
+ [1] LC_CTYPE=en_US.UTF-8       LC_NUMERIC=C               LC_TIME=en_US.UTF-8        LC_COLLATE=C              
+ [5] LC_MONETARY=en_US.UTF-8    LC_MESSAGES=en_US.UTF-8    LC_PAPER=en_US.UTF-8       LC_NAME=C                 
+ [9] LC_ADDRESS=C               LC_TELEPHONE=C             LC_MEASUREMENT=en_US.UTF-8 LC_IDENTIFICATION=C       
+
+time zone: America/Chicago
+tzcode source: system (glibc)
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+[1] mgcv_1.9-4       nlme_3.1-169     R2jags_0.8-9     R2WinBUGS_2.1-24 boot_1.3-32      rjags_4-17      
+[7] coda_0.19-4.1    knitr_1.51      
+
+loaded via a namespace (and not attached):
+ [1] vctrs_0.7.2       cli_3.6.6         rlang_1.2.0       xfun_0.57         stringi_1.8.7     otel_0.2.0       
+ [7] highr_0.12        glue_1.8.1        grid_4.5.1        evaluate_1.0.5    abind_1.4-8       lifecycle_1.0.5  
+[13] stringr_1.6.0     compiler_4.5.1    codetools_0.2-20  rstudioapi_0.18.0 lattice_0.22-9    digest_0.6.39    
+[19] pillar_1.11.1     parallel_4.5.1    splines_4.5.1     magrittr_2.0.5    Matrix_1.7-5      tools_4.5.1 
+
 
 This project is covered under the **MIT License**.
 
