@@ -64,7 +64,7 @@ The output files will be `RAD51Dmave25.noPosNorm.ldaErrVarModel.ClinVarExclude.t
   - eta.ll, eta.ul: 95% lower bound and upper bound of eta
 The running time for the full data set takes ~12 hours (see R sessionInfo at the end of this page). Due to the stochastic nature of the model, there might be some minor differences in the results, but it should converge when the iteration is long enough.
 
-# License
+
 
 ## R sessionInfo()
 
@@ -98,7 +98,7 @@ loaded via a namespace (and not attached):
 [13] stringr_1.6.0     compiler_4.5.1    codetools_0.2-20  rstudioapi_0.18.0 lattice_0.22-9    digest_0.6.39    
 [19] pillar_1.11.1     parallel_4.5.1    splines_4.5.1     magrittr_2.0.5    Matrix_1.7-5      tools_4.5.1 
 
-
+# License
 This project is covered under the **MIT License**.
 
 
