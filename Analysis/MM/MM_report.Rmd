@@ -1,0 +1,490 @@
+---
+author: 
+  "Analysis Team"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+title    : "High throughput study analysis experiment investigation"
+
+
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    theme: united
+    highlight: tango
+
+params:
+
+  inputfile:
+    label: "Input files:"
+    value: ".Rmd" 
+    input: text
+  cfgfile:
+    label: "cfgfile:"
+    value: "config.R"
+    input: text    
+ 
+
+---
+
+```{=html}
+
+<style type="text/css">
+.main-container {
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+```
+<link rel="stylesheet" type="text/css" href="http://cdn.datatables.net/1.10.5/css/jquery.dataTables.min.css">
+
+```{=html}
+<script type="text/javascript">
+  $(document).ready(function() {
+    $("table").DataTable();
+  } );
+</script>
+```
+
+```{r setup, include=TRUE, warning=FALSE, message=FALSE}
+    
+knitr::opts_chunk$set(warning = FALSE, echo = FALSE)
+library(kableExtra)
+library(plotly)
+library(arsenal)
+library(boot)
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(readxl)
+library(tidyverse)
+library(threejs)
+library(pROC)
+library(mixtools)
+
+```
+
+## Setting of this report
+
+```{r}
+source(params$cfgfile, echo = TRUE)
+```
+
+## Aim
+
+Apply Mixture model methods on functional scores. `r RATIO_COMP`.
+
+
+```{r readin, include=TRUE, warning=FALSE, message=FALSE}
+## read in data
+load(params$inputfile)
+
+```
+
+## Analysis Plan:
+
+1. Start with the raw counts
+
+2. Get normalized freq and ratio
+
+3. Position adjusted ratio if user defined 
+
+4. Normalization within each exon and across exons
+
+A. Within each exon:
+
+Positional adjusted T2_T0 or T2_T1 ratios from within each replicate were linearly scaled such that the median controls (eg. synonymous and nonsense SNVs) within the replicate were set to the median controls (eg. synonymous and nonsense SNV) values averaged across replicate  experiments.
+
+B. Normalization across exons.
+
+The ensuing SNV scores for each replicate were then normalized across exons in  the same way by again using median controls (eg. synonymous and nonsense SNVs).
+
+C. Functional score
+
+Get the average functional score cross replicates.
+
+5. Apply Mixture Model on Functional score
+
+6. ROC
+
+
+## Data
+
+In total, there are `r length(unique(norm_ratios$Exon))` Exons in this analysis. 
+
+```{r}
+
+table( norm_ratios$Exon, norm_ratios$Rep)
+```
+
+ 
+Since we have replicates in each Exon, the data plotted below were doubled/tripled or multipled in number. 
+
+
+## 1. Position adjustment if applicable
+
+Only showing the first Exon before and after. Please refer to the pdf file for all Exons.
+
+```{r, fig.width=10, fig.height=10, warning=FALSE, message=FALSE}
+exons <- unique(norm_ratios$Exon)
+exons <-  exons[order(as.numeric(sub("E", "", exons)))]
+if( LOWESS_ADJ == TRUE) {## there is adjustment
+  cbbPalette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+  ratio1 <- paste0("ratio_", RATIO_COMP)
+  ratio1.1 <-  paste0(RATIO_COMP, "_loess")
+  ratio2 <- paste0("ratio_", RATIO_COMP, "_adjusted")
+  ei <- exons[1]
+  dti <- norm_ratios %>% filter(Exon == ei)
+  if(RATIO_COMP == "T2_T0"){ ## three plots, T1_T0 with lowess line, T2_T0 raw and adjusted
+    
+    nrep <- unique(dti$Rep)
+    nrep <- max(nrep)
+    
+    ylims <- range(c(dti[, ratio1], dti[, ratio2]), na.rm = T)
+    ## for each replicates
+    par(mfrow = c(3, 1))
+    ## ratio T1_T0 with lowess
+    ratio0 <- paste0("ratio_", "T1_T0")
+    ratio0.1 <-  paste0("T1_T0", "_loess")
+    
+    plot(unlist(dti[, ratio0]), x=unlist(dti$POS), type="p", pch = 20, cex = 0.2, main=ei, xlab="Position", ylab= ratio0, col = mycols[dti$Rep], ylim = ylims)
+    if(length(grep(ratio0.1, colnames(dti)))>0){
+      for(i in 1:nrep){
+        lines(unlist(dti[dti$Rep == i, ratio0.1]), x=dti$POS[dti$Rep == i], col = mycols[i])
+      }
+    }
+    
+    plot(unlist(dti[, ratio1]), x=unlist(dti$POS), type="p", pch = 20, cex = 0.2, main=ei, xlab="Position", ylab= ratio1, col = mycols[dti$Rep], ylim = ylims)
+    # ratio adjusted
+    plot(unlist(dti[, ratio2]), x=unlist(dti$POS), type="p", pch = 20, cex = 0.2, main=ei, xlab="Position", ylab= ratio2, col = mycols[dti$Rep], ylim = ylims)
+    
+  }else{ ## T2_T1 only show two plots
+    
+    nrep <- unique(norm_ratios$Rep[which(norm_ratios$Exon == ei)])
+    nrep <- max(nrep)
+    ylims <- range(c(dti[, ratio1], dti[, ratio2]), na.rm = T)
+    ## for each replicates
+    par(mfrow = c(2, 1))
+    ## ratio T2_T1 with loess
+    plot(unlist(dti[, ratio1]), x=unlist(dti$POS), type="p", pch = 20, cex = 0.2, main=ei, xlab="Position", ylab= ratio1, col = mycols[dti$Rep], ylim = ylims)
+    if(length(grep(ratio1.1, colnames(dti)))>0){
+      for(i in 1:nrep){
+        lines(unlist(dti[dti$Rep == i, ratio1.1]), x=dti$POS[dti$Rep == i], col = mycols[i])
+      }
+    }
+    ## ratio adjusted
+    plot(unlist(dti[, ratio2]), x=unlist(dti$POS), type="p", pch = 20, cex = 0.2, main=ei, xlab="Position", ylab= ratio2, col = mycols[dti$Rep], ylim = ylims)
+    
+  }
+}
+
+```
+
+```{r, message=FALSE}
+if( LOWESS_ADJ == TRUE) {## there is adjustment
+  ## for each exon put them in pdf. 
+  pdf(paste0(OUTDIR, '/', RATIO_COMP,ifelse(LOWESS_ADJ, "_adjusted", ""), '_lowess.pdf'), height = 8, width = 11)
+  
+  if(RATIO_COMP == "T2_T0"){ ## three plots, T1_T0 with lowess line, T2_T0 raw and adjusted
+    for (ei in exons){
+      dti <- norm_ratios %>% filter(Exon == ei)
+      nrep <- unique(dti$Rep)
+      nrep <- max(nrep)
+      ylims <- range(c(dti[, ratio1], dti[, ratio2]), na.rm = T)
+      ## for each replicates
+      par(mfrow = c(3, 1))
+      ## ratio T1_T0 with lowess
+      ratio0 <- paste0("ratio_", "T1_T0")
+      ratio0.1 <-  paste0("T1_T0", "_loess")
+  
+      plot(unlist(dti[, ratio0]), x=unlist(dti$POS), type="p", pch = 20, cex = 0.2, main=ei, xlab="Position", ylab= ratio0, col = mycols[dti$Rep], ylim = ylims)
+      if(length(grep(ratio0.1, colnames(dti)))>0){
+        for(i in 1:nrep){
+          lines(unlist(dti[dti$Rep == i, ratio0.1]), x=dti$POS[dti$Rep == i], col = mycols[i])
+        }
+      }
+      
+      plot(unlist(dti[, ratio1]), x=unlist(dti$POS), type="p", pch = 20, cex = 0.2, main=ei, xlab="Position", ylab= ratio1, col = mycols[dti$Rep], ylim = ylims)
+      # ratio adjusted
+      plot(unlist(dti[, ratio2]), x=unlist(dti$POS), type="p", pch = 20, cex = 0.2, main=ei, xlab="Position", ylab= ratio2, col = mycols[dti$Rep], ylim = ylims)
+    }
+  }else{ ## T2_T1 only show two plots
+    for (ei in exons){
+      dti <- norm_ratios %>% filter(Exon == ei)
+      nrep <- unique(dti$Rep)
+      nrep <- max(nrep)
+      ylims <- range(c(dti[, ratio1], dti[, ratio2]), na.rm = T)
+      ## for each replicates
+      par(mfrow = c(2, 1))
+      ## ratio T2_T1 with loess
+      plot(unlist(dti[, ratio1]), x=unlist(dti$POS), type="p", pch = 20, cex = 0.2, main=ei, xlab="Position", ylab= ratio1, col = mycols[dti$Rep], ylim = ylims)
+      if(length(grep(ratio1.1, colnames(dti)))>0){
+        for(i in 1:nrep){
+          lines(unlist(dti[dti$Rep == i, ratio1.1]), x=dti$POS[dti$Rep == i], col = mycols[i])
+        }
+      }
+      ## ratio adjusted
+      plot(unlist(dti[, ratio2]), x=unlist(dti$POS), type="p", pch = 20, cex = 0.2, main=ei, xlab="Position", ylab= ratio2, col = mycols[dti$Rep], ylim = ylims)
+    }
+  }
+  
+  
+  dev.off()
+  
+}
+```
+
+## 2. Normalized Results for Ratio
+
+
+### Step1 normalization within exon
+
+
+```{r, include=TRUE, fig.width=4*min(length(exons), 3), fig.height=4*ceiling(length(exons)/3)}
+score0 <- paste0("ratio_", RATIO_COMP, ifelse(LOWESS_ADJ, "_adjusted", ""))
+score1 <- paste0(RATIO_COMP,ifelse(LOWESS_ADJ, "_adjusted", ""), "_norm_wie")
+score2 <- paste0(RATIO_COMP,ifelse(LOWESS_ADJ, "_adjusted", ""), "_norm_xe")
+
+
+etype8 <- unique(norm_ratios$EventType)
+if(length(etype8) >= 8){
+  mycol8 <-  c(1, 5, 6, 2, 3, 4, 7:length(etype8))
+}else{
+  mycol8 <-  c(1, 5, 3, 4, 2, 6)
+
+}
+names(mycol8) <- etype8
+mycol2.1 <- mycol8[etype8]
+
+nrows <- max(ceiling(length(exons)/3), 1)
+
+par(mfrow=c(nrows, 3))
+
+for(ei in exons){
+  dt2plot <- norm_ratios %>% filter(Exon == ei) %>% 
+    mutate(R0 = !!sym(score0),
+           R1 = !!sym(score1),
+           R2 = !!sym(score2))
+  temp <- mycol2.1[match(dt2plot$EventType, etype8)]
+  plot(dt2plot$R0, dt2plot$R1, pch = 20,
+       main = paste0(ei, " (N =", max(dt2plot$Rep), " , P =",  length(unique(dt2plot$POS)), ")"), col = temp,
+       xlab = "before", ylab = 'after')
+  abline(a = 0, b = 1, col = "gray", lty = 2)
+}
+plot(0, 0, type = "n", xlab = '', ylab = '', axes = F)
+legend(x = "bottom", 
+       legend = etype8,
+       pch =20,
+       col =mycol2.1,
+       xpd = TRUE, 
+       cex = 1, ncol = 1) # Horizontal legend
+```
+
+### Step2 normalization across exons.
+
+
+```{r, include=TRUE, fig.width=4*min(length(exons)+1, 3), fig.height=4*ceiling(length(exons)/3)}
+
+par(mfrow=c(nrows, 3))
+
+for(ei in exons){
+  dt2plot <- norm_ratios %>% filter(Exon == ei) %>% 
+    mutate(
+           R1 = !!sym(score1),
+           R2 = !!sym(score2))
+  temp <- mycol2.1[match(dt2plot$EventType, etype8)]
+  plot(dt2plot$R1, dt2plot$R2, pch = 20,
+       main = paste0(ei, " (N =", max(dt2plot$Rep), " , P =",  length(unique(dt2plot$POS)), ")"), col = temp,
+       xlab = "before", ylab = 'after')
+  abline(a = 0, b = 1, col = "gray", lty = 2)
+}
+plot(0, 0, type = "n", xlab = '', ylab = '', axes = F)
+legend(x = "bottom", 
+       legend = etype8,
+       pch =20,
+       col =mycol2.1,
+       xpd = TRUE, 
+       cex = 1, ncol = 1) # Horizontal legend
+
+```
+
+### Put together 
+
+Ratio -> within exon normalized Ratio -> cross exon normalized Ratio
+
+
+```{r, include=TRUE, fig.width=10, fig.height=15}
+dt2plot <- norm_ratios %>% filter(!is.na( !!sym(score0)))
+par(mfrow=c(4,1))
+myylims <- range(unlist(dt2plot[, score0]), na.rm = TRUE)
+plot(dt2plot$POS, unlist(dt2plot[, score0]), pch = 20, col = mycol8[dt2plot$EventType], main = "Raw", 
+     xlab = "genomic position", ylab = 'ratio', ylim = myylims)
+abline(h = 0, col = "gray", lty = 2)
+
+myylims <- range(unlist(dt2plot[, score1]), na.rm = TRUE)
+plot(dt2plot$POS, unlist(dt2plot[, score1]), pch = 20, col = mycol8[dt2plot$EventType], main = "Normalization within Exon", 
+     xlab = "genomic position", ylab = 'wie normalized ratio', ylim = myylims)
+abline(h = 0, col = "gray", lty = 2)
+
+myylims <- range(unlist(dt2plot[, score2]), na.rm = TRUE)
+plot(dt2plot$POS, unlist(dt2plot[, score2]), pch = 20, col = mycol8[dt2plot$EventType], main = "Normalization across Exons", 
+     xlab = "genomic position", ylab = 'xe normalized ratio', ylim = myylims)
+abline(h = 0, col = "gray", lty = 2)
+plot(0, 0, type = "n", xlab = '', ylab = '', axes = F)
+legend(x = "bottom", 
+       legend = etype8,
+       pch =20,
+       col =mycol2.1,
+       xpd = TRUE, 
+       cex = 1, ncol = 3) # Horizontal legend
+
+```
+
+
+## 3. Functional Score distribution
+
+### Normality check 
+
+Plot shows controls only, including splicing region variants if there is any
+
+```{r}
+
+dt2plot <- FS_data %>% filter(EventType %in% c(POS_GROUP, NEG_GROUP)) 
+p <- dt2plot %>%
+  ggplot( aes(x=functional_score, fill=EventType)) +
+  geom_histogram( color="#e9ecef", alpha=0.6, position = 'identity', binwidth = 0.20) +
+  scale_fill_manual(values=c( "red", "#69b3a2")) +  ggtitle ( paste0(RATIO_COMP," Functional Score"))
+ggplotly(p)
+
+```
+
+
+Shapiro-Wilk Normality test
+
+
+`r POS_GROUP` positive control group
+
+
+```{r}
+
+pos <- dt2plot$functional_score[which(dt2plot$EventType %in% POS_GROUP)]
+if(length(pos) > 2 & length(pos) < 5000) {
+  shapiro.test(pos[sample(1:length(pos), min(4500, length(pos)))])
+}else{
+  cat("! sample size must be between 3 and 5000\n")
+}
+```
+
+`r NEG_GROUP` negative control group
+
+```{r}
+
+neg <- dt2plot$functional_score[which(dt2plot$EventType %in% NEG_GROUP)]
+
+if(length(neg) > 2 & length(neg) < 5000) {
+  shapiro.test(neg[sample(1:length(neg), min(4500, length(neg)))])
+}else{
+  cat("! sample size must be between 3 and 5000\n")
+}
+```
+
+
+### QQ plots 
+
+
+```{r, fig.width=9, fig.height=5}
+
+par(mfrow=c(1,2))
+qqnorm(neg, main=paste0(RATIO_COMP, "_", NEG_GROUP))
+qqline(neg, col = "steelblue", lwd = 2)
+qqnorm(pos, main=paste0(RATIO_COMP, "_", POS_GROUP))
+qqline(pos, col = "steelblue", lwd = 2)
+
+
+```
+
+### Group distribution
+
+Include all variants. by `r TYPE_COLUMN`
+
+```{r, fig.width=9, fig.height=5}
+dt2plot <- FS_data %>% filter(!is.na(functional_score)) 
+
+p <- dt2plot %>%
+  ggplot( aes(x=functional_score, fill=EventType)) +
+  geom_histogram( color="#e9ecef", alpha=0.6, position = 'identity', binwidth = 0.15) +  ggtitle ( paste0(RATIO_COMP," functional score"))
+ggplotly(p)
+
+```
+
+```{r, fig.width=9, fig.height=5}
+ggplot(dt2plot, aes(x=EventType, y=functional_score)) + 
+  geom_boxplot(outlier.colour="red", outlier.shape=8,
+                outlier.size=4) +  ggtitle ( paste0(RATIO_COMP," functional score")) + geom_jitter(shape=16, position=position_jitter(0.2))+
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+
+```
+
+### Exon FS distribution 
+
+```{r, fig.width=9, fig.height=5}
+dt2plot <- FS_data %>% filter(!is.na(functional_score)) %>% filter(EventType %in% c(NEG_GROUP, POS_GROUP)) 
+p <- dt2plot %>% 
+  ggplot( aes(x=functional_score, y = Exon, fill=EventType, text = paste0(POS, "_", REF, "_", ALT))) +
+  geom_point( color="#e9ecef", alpha=0.6, position = 'identity', binwidth = 0.1) +
+  scale_fill_manual(values=c( "red", "#69b3a2")) +  ggtitle (paste0(RATIO_COMP," functional score"))
+ggplotly(p)
+
+```
+
+## 5. Classification perf 
+
+
+### 5.1 ROC 
+
+on all variants
+
+```{r ROC1.av, include=TRUE, fig.width=5, fig.height=5, message=FALSE, warning=FALSE}
+dt2plot <- FS_data %>% filter(!is.na(functional_score)) %>% filter(EventType %in% c(NEG_GROUP, POS_GROUP)) %>% mutate(labels = ifelse(EventType %in% c(NEG_GROUP), "control", "case"))
+ROC0.av <- calculate_auc_balance (predictions=dt2plot$functional_score, 
+                       labels = dt2plot$labels, 
+                       plot = TRUE, plot_title = "ROC Curve") 
+ROC0.av$plot
+```
+
+Classification cutoff `r round(ROC0.av$balance_threshold, 3)`, sensitivity `r round(ROC0.av$sensitivity, 2)`, specificity `r round(ROC0.av$specificity, 2)`.
+
+
+### 5.2 Mixture Model 
+
+Findlay paper "fitting a two-component Gaussian mixture model in which the parameters of the ‘non-functional’ distribution were based on all nonsense SNVs and the ‘functional’ distribution based on synonymous SNVs not depleted in RNA (Extended Data Fig. 7). We then used this model to estimate the probability of each SNV’s score being drawn from the non-functional distribution (Pnf). SNVs with Pnf < 0.01 were categorized as functional (72.5%); SNVs with Pnf > 0.99 were categorized as non-functional (21.1%); and SNVs with 0.01 < Pnf < 0.99 (6.4%) were categorized as intermediate."
+
+
+
+```{r MixModel, include=TRUE, fig.width=9, fig.height=5, message=FALSE, warning=FALSE}
+
+mymm$plot1
+mymm$plot2
+```
+
+
+`r paste0("There is",  ifelse(mymm$error.occured, " AN ", " NO "), "Error Ocurred")`.
+
+`r mymm$f99` was the functional score corresponding to the probability of non functional at 99% and `r mymm$f1` was the functional score corresponding to the probability of non functional at 1%.
+
+`r mymm$f98` was the functional score corresponding to the probability of non functional at 98% and `r mymm$f2` was the functional score corresponding to the probability of non functional at 2%.
+
+`r mymm$f95` was the functional score corresponding to the probability of non functional at 95% and `r mymm$f5` was the functional score corresponding to the probability of non functional at 5%.
+
+`r mymm$f90` was the functional score corresponding to the probability of non functional at 90% and `r mymm$f10` was the functional score corresponding to the probability of non functional at 10%.
+
+`r mymm$f80` was the functional score corresponding to the probability of non functional at 98% and `r mymm$f20` was the functional score corresponding to the probability of non functional at 20%.
+
+
+
+
