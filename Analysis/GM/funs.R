@@ -1,5 +1,5 @@
 ## =============================================================
-## MM (Mixture Model) pipeline functions
+## GM (Gaussian Model) pipeline functions
 ## =============================================================
 
 library(dplyr)
