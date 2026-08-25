@@ -1,1 +1,4 @@
-THe folder has the primary analysis codes
+This folder has the primary analysis codes
+
+GM folder: Gaussian model
+VarCall folder: VarCall model
