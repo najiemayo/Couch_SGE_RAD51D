@@ -1226,9 +1226,9 @@ render_report <- function(Input_file, cfgfile) {
 }
 
 
-#' MASSAGE_MM
+#' MASSAGE_GM
 #'
-#' MM-only version of the MASSAGE() wrapper. Runs the mixture-model
+#' GM-only version of the MASSAGE() wrapper. Runs the mixture-model
 #' pipeline: read data -> getspliceMax -> normfreq -> getratio ->
 #' (optional) ladj -> norm_win_exon -> norm_x_exon -> calFS -> mm ->
 #' (optional) render_report. The VarCall (JAGS) and Deseq branches
@@ -1242,8 +1242,8 @@ render_report <- function(Input_file, cfgfile) {
 #'   in OUTDIR/reports/MM.html if MM_REPORT is TRUE)
 #' @export
 #'
-#' @examples MASSAGE_MM("config.R")
-MASSAGE_MM <- function(cfg) {
+#' @examples MASSAGE_GM("config.R")
+MASSAGE_GM <- function(cfg) {
   ## workflow to analyse the data based on config file, MM analysis only.
   source(cfg)
   cat("Analysis is started... \n\n")
