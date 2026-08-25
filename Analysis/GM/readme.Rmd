@@ -1,1 +1,3 @@
+This folder contains GM (Guassian model) analysis code and data.
 
+download the files and follow instruction in readme4users.txt to run the code.
