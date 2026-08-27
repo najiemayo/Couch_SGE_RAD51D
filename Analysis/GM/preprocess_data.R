@@ -10,3 +10,4 @@
 #      Rep, # 1to3
 #      Time, # 0=Lib, 1=Day5, 2=Day14
 #      Exon # from SGE
+#      use4norm # assgin 1 to all
