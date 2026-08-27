@@ -1,4 +1,6 @@
 ## this file contains the detailed steps to prepare input data for GM analysis from provided supplementary data. 
+## RAD51D_input_noE10.tsv
+## filter out E10 variants
 # Data will have the following columns in long format
 #      CHROM, from #CHROM
 #      POS, # from Annotation_hg38
