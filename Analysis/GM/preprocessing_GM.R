@@ -60,7 +60,7 @@ table(test$Time, test$Rep, test$Exon, useNA = 'always')
 # Remove variants from PAM site for Exon 3, varying by replicate.
 ## relabel clivar variants
 
-cv <- read_csv("/fslustre/qhs/ext_na_jie_mayo_edu/MASSAGE_dev/data/RAD51D/internal/clinVarExclusions.csv")
+cv <- read_csv("clinVarExclusions.csv")
 
 out <- test %>% mutate(uPOS = paste(POS, REF, ALT, sep = "_")) %>% filter(Exon != "E10")
 
