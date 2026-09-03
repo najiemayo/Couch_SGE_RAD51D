@@ -1215,7 +1215,7 @@ render_report <- function(Input_file, cfgfile) {
   }
   
   rmarkdown::render(
-    "./MM_report.Rmd",
+    "./GM_report.Rmd",
     params = list(
       inputfile = Input_file,
       cfgfile = cfgfile
