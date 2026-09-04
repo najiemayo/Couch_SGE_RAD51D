@@ -2,7 +2,7 @@
 
 ## data input file in tsv file format that contains the following columns
 ## CHROM      POS REF               ALT   EventType Exon Rep Time EventCount use4norm
-DATAFILE = "./RAD51D_input_noE10.tsv"
+DATAFILE = "./RAD51D_input_noE10_github_gm.tsv"
 OUTDIR <-  "./result/"
 
 RATIO_COMP = "T2_T1" ##"T2_T1" ## T2_T0
