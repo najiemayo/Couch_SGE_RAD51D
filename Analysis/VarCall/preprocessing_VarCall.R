@@ -1,0 +1,60 @@
+## start with the supplementary
+## helper function to create the input file for GM analysis
+
+library(dplyr)
+library(tidyr)
+library(readr)
+library(readxl)
+library(stringr)
+
+Supplementary_Data_2_08272026 <- read_excel("Supplementary Data 2_08272026.xlsx", 
+                                            skip = 1)
+# Data will have the following columns in long format
+#      CHROM, from #CHROM
+#      POS, # from Annotation_hg38
+#      REF, # from REF
+#      ALT, # from ALT
+#      EventCount, # from Rep1_Day14	Rep1_Day5	Rep1_Lib	Rep2_Day14	Rep2_Day5	Rep2_Lib	Rep3_Day14	Rep3_Day5	Rep3_Lib convert to long format
+#      EventType, # from variant class, rename Nonsense to Synonymous and Slient to StopGain
+#      SpliceMax, # maximal value of columns 
+#      Rep, # 1to3
+#      Time, # 0=Lib, 1=Day5, 2=Day14
+#      Exon # from SGE
+#      use4norm # assgin 1 to all
+
+
+
+test <- Supplementary_Data_2_08272026 %>% filter(!is.na(SGE))%>% 
+  dplyr::select(`#CHROM`, POS_hg38,REF, ALT,  AA,
+                Rep1_Day14,	Rep1_Day5,	Rep1_Lib,	Rep2_Day14,	Rep2_Day5,	Rep2_Lib,	Rep3_Day14,	Rep3_Day5,	Rep3_Lib,
+                `variant class`, 
+                SpliceAI_pred_DS_AG, SpliceAI_pred_DS_AL, SpliceAI_pred_DS_DG, SpliceAI_pred_DS_DL,
+                SGE) %>% 
+  rename(Exon = SGE, POS = POS_hg38, CHROM = `#CHROM`) %>% mutate(EventType0 = `variant class`) %>% mutate(AAPOS = as.numeric(str_extract(AA, "\\d+"))) %>%
+  mutate(EventType = ifelse(EventType0 == "Nonsense", "Synonymous",
+                                           ifelse(EventType0 == "Silent", "StopGain", EventType0))) %>%
+  mutate(SpliceMax = pmax( SpliceAI_pred_DS_AG, SpliceAI_pred_DS_AL, SpliceAI_pred_DS_DG, SpliceAI_pred_DS_DL, na.rm= T)) %>%
+  mutate(use4norm =1) 
+
+## reformat to long format
+test0 <- test %>% 
+  pivot_longer(
+    cols = starts_with("Rep"),
+    names_to = c("Rep", "TimeLabel"),
+    names_pattern = "Rep(\\d+)_(.*)",
+    values_to = "EventCount"
+  ) %>%
+  mutate(
+    Rep = as.integer(Rep),
+    Time = case_when(
+      TimeLabel == "Lib" ~ 0,
+      TimeLabel == "Day5" ~ 1,
+      TimeLabel == "Day14" ~ 2
+    )) %>% 
+  select(CHROM, POS, REF, ALT, AAPOS, Exon, EventType, SpliceMax, Rep, Time, EventCount,use4norm)
+
+test0$uPOS <- paste(test0$POS, test0$REF, test0$ALT, sep = "_")
+write.table(test0, "./aggregated_RAD51D_E1_10_SNV_9_12_2025.tsv", 
+            sep = "\t",
+            row.names = FALSE,
+            quote = FALSE)
