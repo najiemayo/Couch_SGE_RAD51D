@@ -46,17 +46,17 @@ This should be done within one miniute.
 - To run the analysis:
   - `cd VarCall` make sure you are in this directory, and make sure the subfolder cache and figs are empty
   - Start R by type R in the command line
-  - Within R, type the following `library(knitr); knit("RAD51Dmave25.noPosNorm.ldaErrVarModel.ClinVarExclude.Rtex")`
+  - Within R, type the following `library(knitr); knit("RAD51Dfall26_noPosNorm_ldaErrVarModel_ClinVarExclude.Rtex")`
 
 - Generate the pdf file with code and explanations:
-  - In Linux, type `pdflatex RAD51Dmave25.noPosNorm.ldaErrVarModel.ClinVarExclude.tex`.
-  - In Windows, use an installed Tex systeme, such as TexStudio to open `RAD51Dmave25.noPosNorm.ldaErrVarModel.ClinVarExclude.tex` and build the pdf file `RAD51Dmave25.noPosNorm.ldaErrVarModel.ClinVarExclude.pdf`
+  - In Linux, type `pdflatex RAD51Dfall26_noPosNorm_ldaErrVarModel_ClinVarExclude.tex`.
+  - In Windows, use an installed Tex systeme, such as TexStudio to open `RAD51Dfall26_noPosNorm_ldaErrVarModel_ClinVarExclude.tex` and build the pdf file `RAD51Dfall26_noPosNorm_ldaErrVarModel_ClinVarExclude.pdf`
     
 - Specified prior:
-  - Currently the prior is set to a mean value of 0.2 using a beta distribution Beta(2, 8). The change the prior, modifiy the line `beta.a<-2.0` and `beta.b<-8.0`. 
+  - Currently the prior is set to a mean value of 0.1 using a beta distribution Beta(1, 9). The change the prior, modifiy the line `beta.a<-2.0` and `beta.b<-8.0`. 
 
 - Expected output and running time.
-The output files will be `RAD51Dmave25.noPosNorm.ldaErrVarModel.ClinVarExclude.tex`, `MAVEpostProbs.csv` and several pdf plots. File `RAD51Dmave25.noPosNorm.ldaErrVarModel.ClinVarExclude.tex` and the plots can be further compiled into a pdf file `RAD51Dmave25.noPosNorm.ldaErrVarModel.ClinVarExclude.pdf` with code, running result and code explanations. File `MAVEpostProbs.csv` is the main output file for predicted probabilities of being pathogenic based on the training labels. The following shows the main columns of output:
+The output files will be `RAD51Dfall26_noPosNorm_ldaErrVarModel_ClinVarExclude.tex`, `MAVEpostProbs.csv` and several pdf plots. File `RAD51Dfall26_noPosNorm_ldaErrVarModel_ClinVarExclude.tex` and the plots can be further compiled into a pdf file `RAD51Dfall26_noPosNorm_ldaErrVarModel_ClinVarExclude.pdf` with code, running result and code explanations. File `MAVEpostProbs.csv` is the main output file for predicted probabilities of being pathogenic based on the training labels. The following shows the main columns of output:
   - PrDel: the probability of being pathogenic
   - lPostOdds: the log posterior odds
   - logBF: the log Bayes factor
